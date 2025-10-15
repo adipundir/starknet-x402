@@ -7,9 +7,10 @@ import { paymentMiddleware } from './lib/x402/middleware';
 
 // Log configuration on startup
 console.log('\n🔧 [Middleware] Configuration:');
-console.log('   RECIPIENT_ADDRESS:', process.env.RECIPIENT_ADDRESS || '❌ MISSING');
-console.log('   TOKEN_ADDRESS:', process.env.TOKEN_ADDRESS || '❌ MISSING');
-console.log('   FACILITATOR_URL:', process.env.FACILITATOR_URL || 'http://localhost:3000 (default)');
+console.log('   RECIPIENT_ADDRESS:', process.env.RECIPIENT_ADDRESS ? `✅ ${process.env.RECIPIENT_ADDRESS}` : `❌ ${process.env.RECIPIENT_ADDRESS}`);
+console.log('   TOKEN_ADDRESS:', process.env.TOKEN_ADDRESS ? `✅ ${process.env.TOKEN_ADDRESS}` : `❌ ${process.env.TOKEN_ADDRESS}`);
+console.log('   FACILITATOR_URL:', process.env.FACILITATOR_URL ? `✅ ${process.env.FACILITATOR_URL}` : `❌ ${process.env.FACILITATOR_URL}`);
+console.log('   NEXT_PUBLIC_SITE_URL:', process.env.NEXT_PUBLIC_SITE_URL ? `✅ ${process.env.NEXT_PUBLIC_SITE_URL}` : `❌ ${process.env.NEXT_PUBLIC_SITE_URL}`);
 console.log('   Price: 10000000000000000 Wei (0.01 STRK)');
 console.log('   Protected route: /api/protected/weather');
 console.log('');
@@ -28,7 +29,7 @@ export const middleware = paymentMiddleware(
   
   // Facilitator configuration
   {
-    url: process.env.FACILITATOR_URL || 'http://localhost:3000',
+    url: process.env.FACILITATOR_URL!,
   }
 );
 

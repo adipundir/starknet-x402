@@ -56,16 +56,17 @@ export default function DemoPage() {
     const rpcUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL;
     
     console.log('🔍 Environment Variables Check:');
-    console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', privateKey ? `✅ ${privateKey.slice(0, 10)}...` : '❌ MISSING');
-    console.log('   NEXT_PUBLIC_CLIENT_ADDRESS:', address || '❌ MISSING');
-    console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', facilitator || '❌ MISSING');
-    console.log('   NEXT_PUBLIC_TOKEN_ADDRESS:', tokenAddress || '❌ MISSING');
-    console.log('   NEXT_PUBLIC_NETWORK_ID:', networkId || '❌ MISSING');
-    console.log('   NEXT_PUBLIC_STARKNET_NODE_URL:', rpcUrl || '❌ MISSING');
+    console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', privateKey && privateKey !== '' ? `✅ ${privateKey.slice(0, 10)}...` : `❌ ${privateKey}`);
+    console.log('   NEXT_PUBLIC_CLIENT_ADDRESS:', address && address !== '' ? `✅ ${address}` : `❌ ${address}`);
+    console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', facilitator && facilitator !== '' ? `✅ ${facilitator}` : `❌ ${facilitator}`);
+    console.log('   NEXT_PUBLIC_TOKEN_ADDRESS:', tokenAddress && tokenAddress !== '' ? `✅ ${tokenAddress}` : `❌ ${tokenAddress}`);
+    console.log('   NEXT_PUBLIC_NETWORK_ID:', networkId && networkId !== '' ? `✅ ${networkId}` : `❌ ${networkId}`);
+    console.log('   NEXT_PUBLIC_STARKNET_NODE_URL:', rpcUrl && rpcUrl !== '' ? `✅ ${rpcUrl}` : `❌ ${rpcUrl}`);
     
-    const hasPrivateKey = !!privateKey;
-    const hasAddress = !!address;
-    const hasFacilitator = !!facilitator;
+    // Check for ACTUAL values, not just truthy
+    const hasPrivateKey = privateKey && privateKey.length > 0;
+    const hasAddress = address && address.length > 0;
+    const hasFacilitator = facilitator && facilitator.length > 0;
     
     if (hasPrivateKey && hasAddress && hasFacilitator) {
       setEnvCheck({ 
@@ -76,11 +77,13 @@ export default function DemoPage() {
     } else {
       setEnvCheck({ 
         loaded: false, 
-        message: '❌ Environment variables NOT loaded - Check .env.local and restart!' 
+        message: '❌ Environment variables NOT loaded - Check .env and restart!' 
       });
       console.error('❌ Environment variables MISSING!');
-      console.error('   Required: NEXT_PUBLIC_CLIENT_PRIVATE_KEY, NEXT_PUBLIC_CLIENT_ADDRESS, NEXT_PUBLIC_FACILITATOR_ADDRESS');
-      console.error('   Fix: cp env.example .env.local → Edit .env.local → Restart server → Hard refresh (Ctrl+Shift+R)');
+      console.error('   PRIVATE_KEY present:', !!hasPrivateKey);
+      console.error('   ADDRESS present:', !!hasAddress);
+      console.error('   FACILITATOR present:', !!hasFacilitator);
+      console.error('   Fix: Restart server (Ctrl+C → npm run dev) → Hard refresh browser (Ctrl+Shift+R)');
     }
   }, []);
 
