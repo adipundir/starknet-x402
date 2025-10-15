@@ -94,7 +94,7 @@ export default function DemoPage() {
       const requestHeaders = { 'Content-Type': 'application/json' };
       
       const startTime = performance.now();
-      const response = await fetch(`http://localhost:3000${endpoint}`, {
+      const response = await fetch(`${endpoint}`, {
         method: 'GET',
         headers: requestHeaders,
       });
@@ -440,7 +440,7 @@ export default function DemoPage() {
       console.log('     6️⃣ [SERVER] Returns 200 + weather data');
       
       const startTime = performance.now();
-      const response = await fetch(`http://localhost:3000${endpoint}`, {
+      const response = await fetch(`${endpoint}`, {
             method: 'GET',
         headers: requestHeaders,
       });
