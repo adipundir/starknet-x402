@@ -1,362 +1,541 @@
 # x402 for Starknet
 
-> **1 line of code to accept digital dollars. No fee, 2 second settlement, $0.001 minimum payment.**
+> **HTTP-native micropayments for the decentralized web. Accept digital payments in one line of code.**
+
+[![npm version](https://img.shields.io/npm/v/@x402/starknet-sdk.svg)](https://www.npmjs.com/package/@x402/starknet-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 x402 is an HTTP-native payment protocol that brings seamless micropayments to the internet. This implementation brings x402 to Starknet, leveraging STARK proofs for secure, scalable, and cost-effective payments.
 
 ## ✨ Features
 
 - 🚀 **One-line integration** - Add payments to your API in seconds
-- ⚡ **Fast settlement** - 2-second transaction finality on Starknet
+- ⚡ **Fast settlement** - ~10 second transaction finality on Starknet
 - 💰 **Micro-payments** - Accept payments as low as $0.001
 - 🔒 **Secure** - Cryptographic signatures and on-chain verification
 - 🌐 **HTTP-native** - Works with standard web infrastructure
-- 🔌 **Chain agnostic** - Extensible to other blockchains
+- 🔌 **Multi-token** - Support STRK, ETH, USDC, and any ERC20
 - 🤖 **Perfect for AI agents** - Programmatic payments for autonomous systems
+- 📦 **TypeScript SDK** - Full type safety and IntelliSense support
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+npm install @x402/starknet-sdk starknet
+```
+
+### Server Setup (Next.js Middleware)
+
+```typescript
+// middleware.ts
+import { paymentMiddleware } from '@x402/starknet-sdk';
+
+export default paymentMiddleware(
+  process.env.RECIPIENT_ADDRESS!,
+  {
+    '/api/premium/data': {
+      price: '10000000000000000',    // 0.01 STRK
+      tokenAddress: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
+      network: 'sepolia',
+      config: {
+        description: 'Premium data access',
+        mimeType: 'application/json',
+      },
+    },
+  },
+  {
+    url: process.env.FACILITATOR_URL!,
+  }
+);
+
+export const config = {
+  matcher: '/api/premium/:path*',
+};
+```
+
+### Client Usage (Automatic Payment)
+
+```typescript
+import { payAndRequest } from '@x402/starknet-sdk/client';
+import { Account, RpcProvider } from 'starknet';
+
+// Initialize Starknet account
+const provider = new RpcProvider({ nodeUrl: 'https://starknet-sepolia.public.blastapi.io' });
+const account = new Account(provider, accountAddress, privateKey, '1');
+
+// Make paid request (automatic payment handling)
+const response = await payAndRequest('http://api.example.com/premium/data', account);
+
+if (response.ok) {
+  const data = await response.json();
+  console.log('Received:', data);
+}
+```
+
+That's it! 🎉 You now have a complete x402 payment system.
+
+---
+
+## 📦 SDK Overview
+
+The `@x402/starknet-sdk` provides everything you need to implement x402 payments:
+
+### 🎯 Core Packages
+
+| Package | Description | Use Case |
+|---------|-------------|----------|
+| **Client** | Payment creation & signing | Frontend/Browser apps |
+| **Middleware** | Route protection | Next.js servers |
+| **Facilitator** | Verification & settlement | Facilitator services |
+| **Types** | TypeScript definitions | Type safety |
+| **Utils** | Helper functions | All environments |
+
+### 📚 Complete Documentation
+
+- **[SDK Documentation](./packages/x402-starknet-sdk/README.md)** - Full SDK reference
+- **[SDK Contents](./SDK_CONTENTS.md)** - Detailed package contents
+- **[Project Structure](./PROJECT_STRUCTURE.md)** - Codebase organization
+- **[Protocol Specification](./spec/scheme/exact/scheme_exact_starknet.md)** - x402 on Starknet
+- **[Examples](./examples/)** - Code examples
+
+---
 
 ## 🏗️ Architecture
 
 ```
-┌──────────┐         ┌──────────────┐         ┌────────────┐
-│          │  HTTP   │              │   RPC   │            │
-│  Client  │◄───────►│   Resource   │◄───────►│Facilitator │
-│          │         │    Server    │         │   Server   │
-└──────────┘         └──────────────┘         └────────────┘
-     │                                              │
-     │              Sign Transactions               │
-     └──────────────────────────────────────────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │                     │
-              │  Starknet L2        │
-              │  - Fast finality    │
-              │  - Low gas costs    │
-              │  - STARK proofs     │
-              │                     │
-              └─────────────────────┘
+┌──────────────┐
+│   Client     │  1. Request resource (no payment)
+│              │  ──────────────────────────────────►
+└──────────────┘                                      ┌──────────────┐
+                 ◄──────────────────────────────────  │   Server     │
+                 2. 402 Payment Required               │  (Middleware)│
+┌──────────────┐    (with requirements)               └──────────────┘
+│   Client     │                                             │
+│              │  3. Sign payment (off-chain)                │
+│              │  ──────────────────────────────────►        │
+└──────────────┘                                      ┌──────┴─────────┐
+                                                      │  Facilitator   │
+                                                      │                │
+                                                      │  ┌──────────┐  │
+                                                      │  │  Verify  │  │
+                                                      │  │  (fast)  │  │
+                                                      │  └──────────┘  │
+                                                      │  ┌──────────┐  │
+                                                      │  │  Settle  │  │
+                                                      │  │(on-chain)│  │
+                                                      │  └──────────┘  │
+                                                      └────────────────┘
+                                                             │
+                                                             ▼
+                                                   ┌──────────────────┐
+┌──────────────┐                                  │  Starknet L2     │
+│   Client     │  ◄───────────────────────────    │  - STARK proofs  │
+│              │  4. 200 OK + Data                │  - Fast finality │
+└──────────────┘     + Transaction Hash           │  - Low gas costs │
+                                                   └──────────────────┘
 ```
 
-## 🚀 Quick Start
+### How It Works
 
-### 5-Minute Setup
+1. **Client requests resource** → Receives `402 Payment Required` with payment details
+2. **Client signs payment** → Off-chain signature (gasless)
+3. **Middleware intercepts** → Verifies signature, settles on-chain
+4. **Client receives resource** → With transaction hash
 
-```bash
-# 1. Install dependencies
-npm install
+---
 
-# 2. Generate test keys
-npm run generate-keys
+## 💡 Usage Examples
 
-# 3. Configure environment
-cp env.example .env
-# Add your generated keys to .env
+### Example 1: Protected API Endpoint
 
-# 4. Run everything!
-npm run demo
-```
-
-**Open:** http://localhost:3000
-
-That's it! 🎉 You now have a complete x402 payment system running.
-
-### Try the Interactive Demo
-
-1. Navigate to http://localhost:3000
-2. Click **"Try Demo"**
-3. Select a protected endpoint
-4. Watch the payment flow in real-time
-5. See settlement on Starknet Sepolia
-
-### 1. Accept Payments (1 Line!)
+**Server (Next.js):**
 
 ```typescript
-import express from 'express';
-import { paymentMiddleware } from './src/middleware/payment-middleware';
+// middleware.ts
+import { paymentMiddleware } from '@x402/starknet-sdk';
 
-const app = express();
-
-// 🎉 That's it! One line to accept payments
-app.use(
-  paymentMiddleware("0xYourStarknetAddress", {
-    "/api/data": "$0.01",
-    "/api/premium": "$0.10"
-  })
+export default paymentMiddleware(
+  '0x04ad015c7b45761cef82152303d133bbf2fd9b033e2ffa2af5ac76982d72b479', // Recipient
+  {
+    '/api/ai/chat': {
+      price: '50000000000000000',      // 0.05 STRK per request
+      tokenAddress: process.env.STRK_TOKEN!,
+      network: 'sepolia',
+      config: {
+        description: 'AI Chat API',
+        maxTimeoutSeconds: 60,
+      },
+    },
+  },
+  { url: 'http://localhost:3000/api/facilitator' }
 );
 
-app.get('/api/data', (req, res) => {
-  res.json({ data: 'Your protected content' });
-});
-
-app.listen(3000);
+// app/api/ai/chat/route.ts
+export async function POST(request: Request) {
+  const { message } = await request.json();
+  
+  // This route is protected - payment required!
+  const aiResponse = await generateAIResponse(message);
+  
+  return Response.json({ response: aiResponse });
+}
 ```
 
-### 2. Run a Facilitator
-
-```bash
-# Configure environment
-cp env.example .env
-# Edit .env with your settings
-
-# Start facilitator
-npm run facilitator
-```
-
-### 3. Make Payments
+**Client (React):**
 
 ```typescript
-import { createPaymentClient } from './src/client/payment-client';
+import { payAndRequest } from '@x402/starknet-sdk/client';
 
-const client = createPaymentClient({
-  account: starknetAccount,
-  provider: rpcProvider,
-  network: 'starknet-sepolia',
-});
-
-const result = await client.pay('http://localhost:3000/api/data');
-console.log(result.response);
+function ChatApp() {
+  const [response, setResponse] = useState('');
+  
+  const sendMessage = async (message: string) => {
+    const account = await getStarknetAccount(); // Your wallet integration
+    
+    const res = await payAndRequest('/api/ai/chat', account, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      setResponse(data.response);
+    }
+  };
+  
+  return <div>{/* Your UI */}</div>;
+}
 ```
 
-## 📚 Documentation
+---
 
-- **[Quick Start](./QUICKSTART.md)** - 5-minute setup guide
-- **[Getting Started](./docs/GETTING_STARTED.md)** - Complete setup guide
-- **[Frontend Demo](./docs/FRONTEND_DEMO.md)** - Interactive demo guide
-- **[API Reference](./docs/API_REFERENCE.md)** - Full API documentation
-- **[Architecture](./docs/ARCHITECTURE.md)** - Technical deep-dive
-- **[Deployment](./docs/DEPLOYMENT.md)** - Production deployment
-- **[Contributing](./CONTRIBUTING.md)** - Contribution guidelines
-- **[Examples](./examples/)** - Code examples and demos
+### Example 2: Multiple Pricing Tiers
 
-## 🏃 Running Examples
+```typescript
+import { paymentMiddleware } from '@x402/starknet-sdk';
 
-### Run Everything at Once
-
-```bash
-npm run demo
+export default paymentMiddleware(
+  process.env.RECIPIENT_ADDRESS!,
+  {
+    '/api/data/basic': {
+      price: '10000000000000000',       // 0.01 STRK
+      tokenAddress: STRK_TOKEN,
+    },
+    '/api/data/premium': {
+      price: '100000000000000000',      // 0.1 STRK
+      tokenAddress: STRK_TOKEN,
+    },
+    '/api/data/enterprise': {
+      price: '1000000000000000000',     // 1 STRK
+      tokenAddress: STRK_TOKEN,
+    },
+  },
+  { url: process.env.FACILITATOR_URL! }
+);
 ```
 
-This starts:
-- ✅ **Frontend** (http://localhost:3000) - Interactive demo UI
-- ✅ **Facilitator** (port 3001) - Payment verification
-- ✅ **Resource Server** (port 3000) - Protected APIs
+---
 
-### Or Run Services Individually
+### Example 3: Browser Wallet Integration
 
-#### Start the Facilitator Server
+```typescript
+import { createPaymentPayload } from '@x402/starknet-sdk/client';
+import { connect } from 'starknetkit';
 
-```bash
-npm run facilitator
+async function payWithWallet() {
+  // Connect wallet (ArgentX, Braavos, etc.)
+  const { wallet } = await connect();
+  
+  // Get payment requirements
+  const response = await fetch('/api/premium/data');
+  const requirements = await response.json();
+  const scheme = requirements.accepts[0];
+  
+  // Create payment (user signs in wallet)
+  const payment = await createPaymentPayload(wallet.account, {
+    to: scheme.payTo,
+    token: scheme.asset,
+    amount: scheme.maxAmountRequired,
+    network: scheme.network,
+  });
+  
+  // Send paid request
+  const paidResponse = await fetch('/api/premium/data', {
+    headers: { 'X-PAYMENT': payment.header },
+  });
+  
+  return paidResponse.json();
+}
 ```
 
-The facilitator runs on port 3001 and provides:
-- `GET /supported` - List supported schemes and networks
-- `POST /verify` - Verify payment signatures
-- `POST /settle` - Settle payments on Starknet
-
-#### Start the Resource Server
-
-```bash
-npm run server
-```
-
-The resource server runs on port 3000 with protected endpoints:
-- `GET /api/data` - $0.01
-- `GET /api/premium` - $0.10
-- `POST /api/ai-query` - $0.05
-
-#### Start the Frontend
-
-```bash
-npm run dev
-```
-
-Beautiful Next.js UI with:
-- Landing page with protocol overview
-- Interactive payment demo
-- Complete documentation
-- Real-time payment visualization
-
-#### Run the Client Example
-
-```bash
-npm run client
-```
+---
 
 ## 🔧 Configuration
 
-### Generate Keys
-
-First, generate test keypairs:
-
-```bash
-npm run generate-keys
-```
-
-This creates:
-- Demo account (client) keypair
-- Facilitator keypair  
-- Resource server address
-
 ### Environment Variables
 
-Copy `.env.example` to `.env` and add your generated keys:
-
 ```bash
-# Client Account (from generate-keys or KEYPAIRS.md)
+# Client Account (for demo/testing)
 NEXT_PUBLIC_CLIENT_PRIVATE_KEY=0x...
 NEXT_PUBLIC_CLIENT_ADDRESS=0x...
 
-# Facilitator Account (from generate-keys or KEYPAIRS.md)
+# Facilitator Account (server-side)
 FACILITATOR_PRIVATE_KEY=0x...
 NEXT_PUBLIC_FACILITATOR_ADDRESS=0x...
 
-# Recipient Account (from KEYPAIRS.md)
-NEXT_PUBLIC_RECIPIENT_ADDRESS=0x...
+# Recipient Account (where payments go)
+PAYMENT_RECIPIENT_ADDRESS=0x...
 
 # Network Configuration
 STARKNET_NODE_URL=https://starknet-sepolia.public.blastapi.io
-NEXT_PUBLIC_STARKNET_NODE_URL=https://starknet-sepolia.public.blastapi.io
-NEXT_PUBLIC_NETWORK_ID=SN_SEPOLIA
-NEXT_PUBLIC_TOKEN_ADDRESS=0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+NEXT_PUBLIC_NETWORK_ID=starknet-sepolia
 
-# Frontend URLs
-NEXT_PUBLIC_FRONTEND_URL=http://localhost:3000
-NEXT_PUBLIC_NETWORK_NAME=Starknet Sepolia Testnet
-NEXT_PUBLIC_EXPLORER_URL=https://sepolia.starkscan.co
+# Token Addresses
+NEXT_PUBLIC_TOKEN_ADDRESS=0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
 ```
 
-### Funding Test Accounts (Optional)
+### Supported Networks
 
-For real testnet transactions:
+- ✅ Starknet Sepolia (testnet)
+- ✅ Starknet Mainnet
+- 🔄 Custom networks (configurable)
 
-1. Visit [Starknet Sepolia Faucet](https://faucet.goerli.starknet.io/)
-2. Enter your `NEXT_PUBLIC_CLIENT_ADDRESS`
-3. Request test ETH and STRK tokens
+### Supported Tokens
+
+- ✅ STRK (Starknet Token)
+- ✅ ETH
+- ✅ USDC
+- ✅ USDT
+- ✅ Any ERC20 token on Starknet
+
+---
 
 ## 🎯 Use Cases
 
-### For APIs & Services
+### API Monetization
+- **Pay-per-request APIs** - Charge for each API call
+- **Usage-based pricing** - Flexible pricing models
+- **No subscription overhead** - Direct, immediate payments
 
-- Pay-per-use APIs
-- Content access (articles, videos, data)
-- AI model inference
-- File storage and retrieval
-- Real-time data feeds
+### AI Services
+- **LLM inference** - Pay per token/request
+- **Image generation** - Pay per image
+- **Data processing** - Pay per computation
 
-### For AI Agents
+### Content Access
+- **Articles & media** - Micropayments for content
+- **Data feeds** - Real-time data subscriptions
+- **File storage** - Pay-per-access files
 
-- Autonomous payments for resources
-- Machine-to-machine transactions
-- Programmatic API access
-- Dynamic resource allocation
-- Pay-as-you-go computing
+### Machine-to-Machine
+- **IoT payments** - Device-to-device transactions
+- **Autonomous agents** - AI-driven payments
+- **Microservices** - Internal payment routing
 
-### For Creators
-
-- Micropayments for content
-- No subscription overhead
-- Direct monetization
-- Global accessibility
-- Instant settlement
-
-## 🛠️ Tech Stack
-
-- **Blockchain**: Starknet L2
-- **Smart Contracts**: Cairo
-- **Backend**: TypeScript, Express
-- **HTTP Protocol**: x402
-- **Cryptography**: STARK signatures
+---
 
 ## 📦 Project Structure
 
 ```
 starknet-x402/
-├── src/
-│   ├── types/           # TypeScript type definitions
-│   ├── contracts/       # Cairo smart contracts
-│   ├── facilitator/     # Facilitator server implementation
-│   │   ├── server.ts
-│   │   ├── starknet-verifier.ts
-│   │   └── starknet-settler.ts
-│   ├── middleware/      # Payment middleware for resource servers
-│   └── client/          # Payment client library
-├── examples/
-│   ├── facilitator.ts   # Facilitator server example
-│   ├── express-server.ts # Resource server example
-│   └── client-example.ts # Client usage examples
-├── docs/
-│   ├── GETTING_STARTED.md
-│   └── API_REFERENCE.md
-└── app/                 # Next.js UI (optional dashboard)
+├── packages/
+│   └── x402-starknet-sdk/          # 📦 The SDK (publishable)
+│       ├── src/
+│       │   ├── client/             # Payment creation & signing
+│       │   ├── facilitator/        # Verification & settlement
+│       │   ├── middleware/         # Next.js middleware
+│       │   ├── types/              # TypeScript types
+│       │   └── index.ts
+│       ├── package.json
+│       └── README.md
+│
+├── app/                            # Demo Next.js App
+│   ├── api/
+│   │   ├── facilitator/           # Facilitator endpoints
+│   │   └── protected/             # Protected resources
+│   └── page.tsx                   # Interactive demo UI
+│
+├── examples/                       # Usage examples
+│   ├── client/
+│   ├── server/
+│   └── facilitator/
+│
+├── spec/                          # Protocol specification
+│   └── scheme/exact/
+│       └── scheme_exact_starknet.md
+│
+└── scripts/                       # Utility scripts
+    ├── deploy-contract.sh
+    └── generate-keys.ts
 ```
+
+---
+
+## 🛠️ Development
+
+### Run Demo Application
+
+```bash
+# Install dependencies
+npm install
+
+# Set up environment
+cp .env.example .env
+# Add your keys to .env
+
+# Start development server
+npm run dev
+```
+
+Open http://localhost:3000 to see the interactive demo!
+
+### Build SDK
+
+```bash
+cd packages/x402-starknet-sdk
+npm run build
+```
+
+### Run Tests
+
+```bash
+npm test
+```
+
+---
 
 ## 🔐 Security
 
-- **Signature Verification**: All payments cryptographically signed
-- **Nonce Protection**: Prevents replay attacks
-- **Deadline Enforcement**: Time-limited payments
-- **Amount Validation**: Strict payment verification
-- **Balance Checks**: Ensures sufficient funds
+- ✅ **Off-chain signatures** - Client never exposes private key
+- ✅ **Nonce protection** - Prevents replay attacks
+- ✅ **Deadline enforcement** - Time-limited payments
+- ✅ **Amount validation** - Exact amount control
+- ✅ **Balance checks** - Ensures sufficient funds
+- ✅ **Allowance verification** - ERC20 approval checks
+- ✅ **On-chain settlement** - Cryptographically secured
+
+---
 
 ## 🌟 Why x402 on Starknet?
 
 ### Starknet Benefits
 
-- **Low Fees**: Orders of magnitude cheaper than L1
-- **Fast Finality**: 2-second block times
-- **High Throughput**: Handle millions of micropayments
-- **Native Account Abstraction**: Flexible signature schemes
-- **STARK Proofs**: Superior cryptographic security
+| Feature | Benefit |
+|---------|---------|
+| **Low Fees** | 100x cheaper than Ethereum L1 |
+| **Fast Finality** | ~10 second block times |
+| **High Throughput** | Handle millions of micropayments |
+| **Account Abstraction** | Native smart contract accounts |
+| **STARK Proofs** | Superior cryptographic security |
 
 ### x402 Benefits
 
-- **HTTP Native**: Works with existing web infrastructure
-- **No Integration Overhead**: 1 line of code for servers
-- **Universal Standard**: Chain-agnostic protocol
-- **Extensible**: Support for multiple payment schemes
-- **Developer Friendly**: Simple, intuitive API
+| Feature | Benefit |
+|---------|---------|
+| **HTTP Native** | Works with existing web infrastructure |
+| **Simple Integration** | 1 line of code for servers |
+| **Universal Standard** | Chain-agnostic protocol |
+| **Developer Friendly** | Intuitive API and great docs |
+
+---
+
+## 📖 API Reference
+
+### Client SDK
+
+```typescript
+import {
+  createPaymentPayload,
+  signPaymentWithAccount,
+  payAndRequest,
+  requestWithPayment,
+  extractTransactionHash,
+} from '@x402/starknet-sdk/client';
+```
+
+### Middleware SDK
+
+```typescript
+import { paymentMiddleware } from '@x402/starknet-sdk';
+```
+
+### Facilitator SDK
+
+```typescript
+import {
+  verifyPayment,
+  settlePayment,
+  checkBalance,
+  checkAllowance,
+} from '@x402/starknet-sdk/facilitator';
+```
+
+**Full API documentation:** [SDK README](./packages/x402-starknet-sdk/README.md)
+
+---
 
 ## 🗺️ Roadmap
 
+### Completed ✅
 - [x] Core protocol implementation
 - [x] Exact payment scheme
-- [x] Facilitator server
-- [x] Payment middleware
-- [x] Client library
-- [x] Cairo smart contracts
-- [ ] Smart contract deployment scripts
-- [ ] Web dashboard for monitoring
-- [ ] Additional payment schemes (upto, streaming)
-- [ ] Multi-token support
-- [ ] Rate limiting & quotas
-- [ ] Analytics & reporting
+- [x] Facilitator verification & settlement
+- [x] Payment middleware for Next.js
+- [x] Client SDK with automatic payment
+- [x] TypeScript types and documentation
+- [x] Interactive demo application
+- [x] Build system passing
+
+### In Progress 🔄
+- [ ] SDK publishing to npm
+- [ ] React hooks (`usePayment`, `useProtectedResource`)
+- [ ] Express.js adapter
+- [ ] CLI tools for testing
+
+### Planned 📋
+- [ ] Payment streaming
+- [ ] Subscription support
+- [ ] Multi-facilitator support
+- [ ] Rate limiting integration
+- [ ] Analytics dashboard
 - [ ] Mainnet deployment
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our contributing guidelines and submit pull requests.
+Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
 
 ## 🔗 Resources
 
-- [x402 Specification](https://github.com/x402/spec)
+- [x402 Specification](https://github.com/coinbase/x402)
 - [Starknet Documentation](https://docs.starknet.io)
-- [Cairo Language](https://www.cairo-lang.org)
 - [Starknet.js](https://www.starknetjs.com)
+- [Cairo Language](https://www.cairo-lang.org)
 
-## 💬 Community
+---
 
-- GitHub Issues: Report bugs and request features
-- Discord: Join our community
-- Twitter: Follow for updates
+## 💬 Support
+
+- **GitHub Issues**: [Report bugs](https://github.com/yourusername/starknet-x402/issues)
+- **Documentation**: [Full docs](./packages/x402-starknet-sdk/README.md)
+- **Examples**: [Code examples](./examples/)
+
+---
 
 ## ⚡ Philosophy
 
-> "Payments on the internet are fundamentally flawed. Credit Cards are high friction, hard to accept, have minimum payments that are far too high, and don't fit into the programmatic nature of the internet. It's time for an open, internet-native form of payments."
+> "Payments on the internet are fundamentally flawed. Credit cards are high friction, hard to accept, have minimum payments that are far too high, and don't fit into the programmatic nature of the internet. It's time for an open, internet-native form of payments."
 
 x402 on Starknet makes this vision real.
 

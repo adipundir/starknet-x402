@@ -14,6 +14,8 @@
     "server": "ts-node examples/express-server.ts",
     "client": "ts-node examples/client-example.ts",
     "generate-keys": "ts-node scripts/generate-keys.ts",
+    "check-env": "node scripts/check-env.js",
+    "setup-env": "cp env.example .env.local && echo '✅ Created .env.local! Edit it with your keys.'",
     "demo": "concurrently \"npm run facilitator\" \"npm run server\" \"npm run dev\"",
     "test": "jest",
     "lint": "eslint src/"

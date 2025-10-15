@@ -6,6 +6,12 @@
  * 2. Create and sign payment payload
  * 3. Send request with X-PAYMENT header
  * 4. Receive resource with X-PAYMENT-RESPONSE header
+ * 
+ * Installation:
+ *   npm install @adipundir/starknet-x402 starknet
+ * 
+ * Usage:
+ *   ts-node examples/client/client-payment-example.ts
  */
 
 import { Account, RpcProvider } from 'starknet';
@@ -15,7 +21,7 @@ import {
   requestWithPayment,
   payAndRequest,
   decodeSettlementResponse,
-} from '../lib/x402/client-payment';
+} from '@adipundir/starknet-x402';
 
 // =====================================================
 // Example 1: Manual payment flow with private key

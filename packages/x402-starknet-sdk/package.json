@@ -1,0 +1,53 @@
+{
+  "name": "@adipundir/starknet-x402",
+  "version": "0.1.0",
+  "description": "x402 payment protocol SDK for Starknet - HTTP-native micropayments",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "lint": "tslint 'src/**/*.ts'",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "x402",
+    "starknet",
+    "payments",
+    "micropayments",
+    "http",
+    "blockchain",
+    "crypto"
+  ],
+  "author": "Aditya Pundir",
+  "license": "MIT",
+  "peerDependencies": {
+    "next": "^15.0.0",
+    "starknet": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.21",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adipundir/starknet-x402.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adipundir/starknet-x402/issues"
+  },
+  "homepage": "https://github.com/adipundir/starknet-x402#readme"
+}
