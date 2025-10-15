@@ -90,7 +90,7 @@ app.post('/settle', async (req, res) => {
     if (result.success) {
       console.log('✅ Payment settled!');
       console.log('Transaction:', result.txHash);
-      console.log(`Explorer: https://sepolia.starkscan.co/tx/${result.txHash}`);
+      console.log(`Explorer: https://sepolia.voyager.online/tx/${result.txHash}`);
       
       res.json({
         success: true,

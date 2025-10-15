@@ -48,29 +48,39 @@ export default function DemoPage() {
   });
   
   useEffect(() => {
-    const hasPrivateKey = !!process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY;
-    const hasAddress = !!process.env.NEXT_PUBLIC_CLIENT_ADDRESS;
-    const hasFacilitator = !!process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
+    const privateKey = process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY;
+    const address = process.env.NEXT_PUBLIC_CLIENT_ADDRESS;
+    const facilitator = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
+    const tokenAddress = process.env.NEXT_PUBLIC_TOKEN_ADDRESS;
+    const networkId = process.env.NEXT_PUBLIC_NETWORK_ID;
+    const rpcUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL;
+    
+    console.log('🔍 Environment Variables Check:');
+    console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', privateKey ? `✅ ${privateKey.slice(0, 10)}...` : '❌ MISSING');
+    console.log('   NEXT_PUBLIC_CLIENT_ADDRESS:', address || '❌ MISSING');
+    console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', facilitator || '❌ MISSING');
+    console.log('   NEXT_PUBLIC_TOKEN_ADDRESS:', tokenAddress || '❌ MISSING');
+    console.log('   NEXT_PUBLIC_NETWORK_ID:', networkId || '❌ MISSING');
+    console.log('   NEXT_PUBLIC_STARKNET_NODE_URL:', rpcUrl || '❌ MISSING');
+    
+    const hasPrivateKey = !!privateKey;
+    const hasAddress = !!address;
+    const hasFacilitator = !!facilitator;
     
     if (hasPrivateKey && hasAddress && hasFacilitator) {
       setEnvCheck({ 
         loaded: true, 
         message: '✅ Environment variables loaded' 
       });
-      console.log('🎉 Environment variables check passed on mount');
-      console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY: ✅');
-      console.log('   NEXT_PUBLIC_CLIENT_ADDRESS: ✅');
-      console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS: ✅');
+      console.log('✅ All required environment variables are set!');
     } else {
       setEnvCheck({ 
         loaded: false, 
-        message: '❌ Environment variables NOT loaded - Restart dev server required!' 
+        message: '❌ Environment variables NOT loaded - Check .env.local and restart!' 
       });
-      console.error('🚨 Environment variables check FAILED on mount:');
-      console.error('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', hasPrivateKey ? '✅' : '❌ MISSING');
-      console.error('   NEXT_PUBLIC_CLIENT_ADDRESS:', hasAddress ? '✅' : '❌ MISSING');
-      console.error('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', hasFacilitator ? '✅' : '❌ MISSING');
-      console.error('\n📋 To fix: Ctrl+C → npm run dev → Hard refresh browser');
+      console.error('❌ Environment variables MISSING!');
+      console.error('   Required: NEXT_PUBLIC_CLIENT_PRIVATE_KEY, NEXT_PUBLIC_CLIENT_ADDRESS, NEXT_PUBLIC_FACILITATOR_ADDRESS');
+      console.error('   Fix: cp env.example .env.local → Edit .env.local → Restart server → Hard refresh (Ctrl+Shift+R)');
     }
   }, []);
 
@@ -155,11 +165,29 @@ export default function DemoPage() {
       }
 
       const requirements = state.step1Response.accepts[0];
-      const tokenAddress = requirements.asset.toLowerCase(); // Normalize to lowercase for Starknet
       
-      console.log('\n💰 [CLIENT] Payment Requirements:');
-      console.log('   Amount:', formatTokenAmount(requirements.maxAmountRequired));
-      console.log('   Recipient:', requirements.payTo);
+      console.log('\n📋 [CLIENT] Raw payment requirements received:');
+      console.log(JSON.stringify(requirements, null, 2));
+      
+      // Validate required fields
+      if (!requirements.asset && !requirements.token) {
+        throw new Error('Missing token address in payment requirements (expected "asset" or "token" field)');
+      }
+      if (!requirements.maxAmountRequired && !requirements.amount) {
+        throw new Error('Missing amount in payment requirements (expected "maxAmountRequired" or "amount" field)');
+      }
+      if (!requirements.payTo && !requirements.to) {
+        throw new Error('Missing recipient in payment requirements (expected "payTo" or "to" field)');
+      }
+      
+      // Support both field names (middleware uses different names)
+      const tokenAddress = (requirements.asset || requirements.token).toLowerCase();
+      const amount = requirements.maxAmountRequired || requirements.amount;
+      const recipient = requirements.payTo || requirements.to;
+      
+      console.log('\n💰 [CLIENT] Payment Requirements (validated):');
+      console.log('   Amount:', formatTokenAmount(amount));
+      console.log('   Recipient:', recipient);
       console.log('   Token:', tokenAddress, '(STRK)');
 
       // Initialize Starknet provider and account
@@ -222,15 +250,15 @@ export default function DemoPage() {
       console.log('   ✅ Nonce retrieved!');
 
       // Step 2: Sign the transfer transaction
-      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('✍️  [CLIENT] Step 2: SIGNING TRANSFER TRANSACTION');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('   This is a PRE-SIGNED transaction');
       console.log('   User signs the transaction, facilitator will broadcast it');
 
       console.log('   Token:', tokenAddress);
-      console.log('   Recipient:', requirements.payTo);
-      console.log('   Amount:', formatTokenAmount(requirements.maxAmountRequired));
+      console.log('   Recipient:', recipient);
+      console.log('   Amount:', formatTokenAmount(amount));
 
       // Step 3: Generate nonce for payment
       console.log('\n🎲 [CLIENT] Step 3: Generating unique nonce and deadline...');
@@ -257,20 +285,20 @@ export default function DemoPage() {
       console.log('   ║   Type:', typeof clientAddress);
       console.log('   ║   Is Undefined?', clientAddress === undefined);
       console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ requirements.payTo (recipient):');
-      console.log('   ║   Value:', requirements.payTo);
-      console.log('   ║   Type:', typeof requirements.payTo);
-      console.log('   ║   Is Undefined?', requirements.payTo === undefined);
+      console.log('   ║ recipient (from requirements):');
+      console.log('   ║   Value:', recipient);
+      console.log('   ║   Type:', typeof recipient);
+      console.log('   ║   Is Undefined?', recipient === undefined);
       console.log('   ╠═══════════════════════════════════════════════════════════');
       console.log('   ║ tokenAddress:');
       console.log('   ║   Value:', tokenAddress);
       console.log('   ║   Type:', typeof tokenAddress);
       console.log('   ║   Is Undefined?', tokenAddress === undefined);
       console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ requirements.maxAmountRequired:');
-      console.log('   ║   Value:', requirements.maxAmountRequired);
-      console.log('   ║   Type:', typeof requirements.maxAmountRequired);
-      console.log('   ║   Is Undefined?', requirements.maxAmountRequired === undefined);
+      console.log('   ║ amount (from requirements):');
+      console.log('   ║   Value:', amount);
+      console.log('   ║   Type:', typeof amount);
+      console.log('   ║   Is Undefined?', amount === undefined);
       console.log('   ╠═══════════════════════════════════════════════════════════');
       console.log('   ║ nonce:');
       console.log('   ║   Value:', nonce);
@@ -290,9 +318,9 @@ export default function DemoPage() {
       // CRITICAL CHECK: Verify ALL required variables for signing
       const missingSignVars: string[] = [];
       if (!clientAddress) missingSignVars.push('clientAddress');
-      if (!requirements.payTo) missingSignVars.push('requirements.payTo');
+      if (!recipient) missingSignVars.push('recipient');
       if (!tokenAddress) missingSignVars.push('tokenAddress');
-      if (!requirements.maxAmountRequired) missingSignVars.push('requirements.maxAmountRequired');
+      if (!amount) missingSignVars.push('amount');
       if (!nonce) missingSignVars.push('nonce');
       if (!deadline) missingSignVars.push('deadline');
       if (!clientAccount) missingSignVars.push('clientAccount');
@@ -337,9 +365,9 @@ export default function DemoPage() {
         },
         message: {
           from: clientAddress.toLowerCase(), // Normalize to lowercase
-          to: requirements.payTo.toLowerCase(), // Normalize to lowercase
+          to: recipient.toLowerCase(), // Normalize to lowercase
           token: tokenAddress, // Already normalized above
-          amount: requirements.maxAmountRequired,
+          amount: amount,
           nonce: nonce.toLowerCase(), // Normalize to lowercase
           deadline: deadline.toString(),
         },
@@ -347,9 +375,9 @@ export default function DemoPage() {
 
       console.log('   Payment Details:');
       console.log('     From:', clientAddress);
-      console.log('     To:', requirements.payTo);
+      console.log('     To:', recipient);
       console.log('     Token:', tokenAddress, '(STRK)');
-      console.log('     Amount:', requirements.maxAmountRequired, 'Wei', `(${formatTokenAmount(requirements.maxAmountRequired)})`);
+      console.log('     Amount:', amount, 'Wei', `(${formatTokenAmount(amount)})`);
       console.log('   📝 [CLIENT] Signing message with Starknet typed data...');
       
       const signature = await clientAccount.signMessage(message);
@@ -374,9 +402,9 @@ export default function DemoPage() {
             network: 'starknet-sepolia',
             payload: {
           from: clientAddress.toLowerCase(), // Normalize to lowercase
-          to: requirements.payTo.toLowerCase(), // Normalize to lowercase
+          to: recipient.toLowerCase(), // Normalize to lowercase
           token: tokenAddress, // Already normalized above
-          amount: requirements.maxAmountRequired,
+          amount: amount,
           nonce: nonce.toLowerCase(), // Normalize to lowercase
           deadline: deadline,
               signature: {
@@ -450,23 +478,23 @@ export default function DemoPage() {
       const settlementHeader = response.headers.get('X-PAYMENT-RESPONSE');
       let txHash = '';
 
-      if (settlementHeader) {
-        try {
-          const settlement = JSON.parse(atob(settlementHeader));
+            if (settlementHeader) {
+              try {
+                const settlement = JSON.parse(atob(settlementHeader));
           txHash = settlement.transaction || settlement.txHash || '';
-        } catch (e) {
+              } catch (e) {
           console.error('Failed to parse settlement header:', e);
         }
       }
 
       console.log('\n✅ [CLIENT] Payment successful!');
       console.log('   Transaction hash:', txHash);
-      
+
       setState(prev => ({ 
         ...prev, 
         step: 'complete', 
         step2Response: data, 
-        txHash,
+              txHash,
         step2ResponseTime: Math.round(endTime - startTime),
         step2Headers: headers,
         step2RequestHeaders: requestHeaders
@@ -620,12 +648,12 @@ export default function DemoPage() {
                 {state.txHash && (
                   <div className="pt-4 border-t border-gray-200">
                     <a
-                      href={`https://sepolia.starkscan.co/tx/${state.txHash}`}
+                      href={`https://sepolia.voyager.online/tx/${state.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
                     >
-                      View settlement transaction on Starkscan →
+                      View settlement transaction on Voyager →
                     </a>
                     </div>
                   )}

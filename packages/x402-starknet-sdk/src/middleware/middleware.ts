@@ -236,7 +236,7 @@ export function paymentMiddleware(
       console.log(`✅ [x402 Middleware] Settlement SUCCESS`);
       console.log(`[x402 Middleware] Transaction hash:`, settlement.txHash);
       console.log(
-        `[x402 Middleware] Explorer: https://sepolia.starkscan.co/tx/${settlement.txHash}`
+        `[x402 Middleware] Explorer: https://sepolia.voyager.online/tx/${settlement.txHash}`
       );
 
       // Step 4: Payment settled! Allow request to proceed

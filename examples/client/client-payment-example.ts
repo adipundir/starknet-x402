@@ -83,7 +83,7 @@ async function example1_ManualPayment() {
       const settlement = decodeSettlementResponse(settlementHeader);
       console.log('\nSettlement response:');
       console.log(JSON.stringify(settlement, null, 2));
-      console.log(`\nExplorer: https://sepolia.starkscan.co/tx/${settlement.txHash}`);
+      console.log(`\nExplorer: https://sepolia.voyager.online/tx/${settlement.txHash}`);
     }
     
     // Get the protected resource
