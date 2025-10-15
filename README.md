@@ -203,30 +203,27 @@ This creates:
 Copy `.env.example` to `.env` and add your generated keys:
 
 ```bash
-# Demo/Testing (from generate-keys)
-DEMO_PRIVATE_KEY=0x...
-DEMO_PUBLIC_KEY=0x...
-DEMO_ACCOUNT_ADDRESS=0x...
+# Client Account (from generate-keys or KEYPAIRS.md)
+NEXT_PUBLIC_CLIENT_PRIVATE_KEY=0x...
+NEXT_PUBLIC_CLIENT_ADDRESS=0x...
 
-# Facilitator (from generate-keys)
+# Facilitator Account (from generate-keys or KEYPAIRS.md)
 FACILITATOR_PRIVATE_KEY=0x...
-FACILITATOR_ADDRESS=0x...
+NEXT_PUBLIC_FACILITATOR_ADDRESS=0x...
 
-# Resource Server (from generate-keys)
-RESOURCE_SERVER_ADDRESS=0x...
+# Recipient Account (from KEYPAIRS.md)
+NEXT_PUBLIC_RECIPIENT_ADDRESS=0x...
 
 # Network Configuration
-STARKNET_RPC_URL=https://starknet-sepolia.public.blastapi.io
-NETWORK=starknet-sepolia
-TOKEN_ADDRESS=0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+STARKNET_NODE_URL=https://starknet-sepolia.public.blastapi.io
+NEXT_PUBLIC_STARKNET_NODE_URL=https://starknet-sepolia.public.blastapi.io
+NEXT_PUBLIC_NETWORK_ID=SN_SEPOLIA
+NEXT_PUBLIC_TOKEN_ADDRESS=0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
 
 # Frontend URLs
-NEXT_PUBLIC_DEMO_ADDRESS=0x... # Same as DEMO_ACCOUNT_ADDRESS
 NEXT_PUBLIC_FRONTEND_URL=http://localhost:3000
-NEXT_PUBLIC_FACILITATOR_URL=http://localhost:3001
 NEXT_PUBLIC_NETWORK_NAME=Starknet Sepolia Testnet
 NEXT_PUBLIC_EXPLORER_URL=https://sepolia.starkscan.co
-NEXT_PUBLIC_DEMO_MODE=true
 ```
 
 ### Funding Test Accounts (Optional)
@@ -234,9 +231,8 @@ NEXT_PUBLIC_DEMO_MODE=true
 For real testnet transactions:
 
 1. Visit [Starknet Sepolia Faucet](https://faucet.goerli.starknet.io/)
-2. Enter your `DEMO_ACCOUNT_ADDRESS`
-3. Request test ETH
-4. Set `NEXT_PUBLIC_DEMO_MODE=false` in `.env`
+2. Enter your `NEXT_PUBLIC_CLIENT_ADDRESS`
+3. Request test ETH and STRK tokens
 
 ## 🎯 Use Cases
 

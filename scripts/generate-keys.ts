@@ -49,9 +49,9 @@ console.log('');
 console.log('📝 Add these to your .env file:');
 console.log('');
 console.log(`# Testing Account Credentials`);
-console.log(`DEMO_PRIVATE_KEY="${privateKeyHex}"`);
-console.log(`DEMO_PUBLIC_KEY="${publicKey}"`);
-console.log(`DEMO_ACCOUNT_ADDRESS="${mockAccountAddress}"`);
+console.log(`NEXT_PUBLIC_CLIENT_PRIVATE_KEY="${privateKeyHex}"`);
+console.log(`NEXT_PUBLIC_CLIENT_PUBLIC_KEY="${publicKey}"`);
+console.log(`NEXT_PUBLIC_CLIENT_ADDRESS="${mockAccountAddress}"`);
 console.log('');
 console.log('🚨 IMPORTANT:');
 console.log('  1. Never commit these keys to version control');
@@ -127,5 +127,7 @@ console.log('2. Fund the demo account with test ETH (if using testnet)');
 console.log('3. Start the facilitator and resource server');
 console.log('4. Open the frontend demo to test payments');
 console.log('');
+
+
 
 
