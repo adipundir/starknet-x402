@@ -16,7 +16,7 @@ export async function verifyPayment(
 ): Promise<VerificationResult> {
   // Use local facilitator by default, or external if configured
   const baseUrl = facilitatorUrl || process.env.FACILITATOR_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  
+  console.log('facilitator baseUrl', baseUrl);
   // First validate the payload structure
   const payload = decodePaymentHeader(paymentHeader);
   if (!validatePaymentPayload(payload)) {
