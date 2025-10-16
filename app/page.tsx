@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Account, RpcProvider, num } from 'starknet';
+import { Account, RpcProvider } from 'starknet';
 
 interface Step {
   step: 'idle' | 'step1' | 'step2' | 'complete';
@@ -51,17 +51,6 @@ export default function DemoPage() {
     const privateKey = process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY;
     const address = process.env.NEXT_PUBLIC_CLIENT_ADDRESS;
     const facilitator = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
-    const tokenAddress = process.env.NEXT_PUBLIC_TOKEN_ADDRESS;
-    const networkId = process.env.NEXT_PUBLIC_NETWORK_ID;
-    const rpcUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL;
-    
-    console.log('🔍 Environment Variables Check:');
-    console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', privateKey && privateKey !== '' ? `✅ ${privateKey.slice(0, 10)}...` : `❌ ${privateKey}`);
-    console.log('   NEXT_PUBLIC_CLIENT_ADDRESS:', address && address !== '' ? `✅ ${address}` : `❌ ${address}`);
-    console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', facilitator && facilitator !== '' ? `✅ ${facilitator}` : `❌ ${facilitator}`);
-    console.log('   NEXT_PUBLIC_TOKEN_ADDRESS:', tokenAddress && tokenAddress !== '' ? `✅ ${tokenAddress}` : `❌ ${tokenAddress}`);
-    console.log('   NEXT_PUBLIC_NETWORK_ID:', networkId && networkId !== '' ? `✅ ${networkId}` : `❌ ${networkId}`);
-    console.log('   NEXT_PUBLIC_STARKNET_NODE_URL:', rpcUrl && rpcUrl !== '' ? `✅ ${rpcUrl}` : `❌ ${rpcUrl}`);
     
     // Check for ACTUAL values, not just truthy
     const hasPrivateKey = privateKey && privateKey.length > 0;
@@ -73,17 +62,13 @@ export default function DemoPage() {
         loaded: true, 
         message: '✅ Environment variables loaded' 
       });
-      console.log('✅ All required environment variables are set!');
+      console.log('✅ Environment ready');
     } else {
       setEnvCheck({ 
         loaded: false, 
         message: '❌ Environment variables NOT loaded - Check .env and restart!' 
       });
-      console.error('❌ Environment variables MISSING!');
-      console.error('   PRIVATE_KEY present:', !!hasPrivateKey);
-      console.error('   ADDRESS present:', !!hasAddress);
-      console.error('   FACILITATOR present:', !!hasFacilitator);
-      console.error('   Fix: Restart server (Ctrl+C → npm run dev) → Hard refresh browser (Ctrl+Shift+R)');
+      console.error('❌ Missing environment variables - restart server');
     }
   }, []);
 
@@ -120,45 +105,17 @@ export default function DemoPage() {
 
   // Step 2: Request with X-PAYMENT header (with proper Starknet signing)
   const handleStep2 = async () => {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔵 [CLIENT] Step 2: Starting payment process');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔵 Starting payment process...');
     
-    // FIRST CHECK: Verify environment variables are loaded
     const clientPrivateKey = process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY;
     const clientAddress = process.env.NEXT_PUBLIC_CLIENT_ADDRESS;
     const facilitatorAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
     
-    console.log('🔍 [CLIENT] Pre-flight check - Environment variables:');
-    console.log('   NEXT_PUBLIC_CLIENT_PRIVATE_KEY:', clientPrivateKey ? '✅ LOADED' : '❌ UNDEFINED');
-    console.log('     Value:', clientPrivateKey || 'UNDEFINED');
-    console.log('     Type:', typeof clientPrivateKey);
-    console.log('     Length:', clientPrivateKey?.length || 0);
-    console.log('   NEXT_PUBLIC_CLIENT_ADDRESS:', clientAddress ? '✅ LOADED' : '❌ UNDEFINED');
-    console.log('     Value:', clientAddress || 'UNDEFINED');
-    console.log('     Type:', typeof clientAddress);
-    console.log('     Length:', clientAddress?.length || 0);
-    console.log('   NEXT_PUBLIC_FACILITATOR_ADDRESS:', facilitatorAddress ? '✅ LOADED' : '❌ UNDEFINED');
-    console.log('     Value:', facilitatorAddress || 'UNDEFINED');
-    console.log('     Type:', typeof facilitatorAddress);
-    console.log('     Length:', facilitatorAddress?.length || 0);
-    
     if (!clientPrivateKey || !clientAddress || !facilitatorAddress) {
-      const errorMsg = 
-        '❌ CRITICAL ERROR: Environment variables not loaded!\n\n' +
-        '🔴 The dev server needs to be RESTARTED.\n\n' +
-        'Steps to fix:\n' +
-        '1. Stop the dev server (Ctrl+C in terminal)\n' +
-        '2. Run: npm run dev\n' +
-        '3. Hard refresh browser (Cmd+Shift+R or Ctrl+Shift+R)\n\n' +
-        'Missing variables:\n' +
-        (!clientPrivateKey ? '  ❌ NEXT_PUBLIC_CLIENT_PRIVATE_KEY\n' : '') +
-        (!clientAddress ? '  ❌ NEXT_PUBLIC_CLIENT_ADDRESS\n' : '') +
-        (!facilitatorAddress ? '  ❌ NEXT_PUBLIC_FACILITATOR_ADDRESS\n' : '');
-      
-      console.error('🚨', errorMsg);
+      const errorMsg = '❌ Environment variables not loaded - restart server';
+      console.error(errorMsg);
       setState(prev => ({ ...prev, error: errorMsg, step: 'idle' }));
-      return; // STOP here - don't proceed
+      return;
     }
     
     setState(prev => ({ ...prev, step: 'step2' }));
@@ -169,180 +126,35 @@ export default function DemoPage() {
 
       const requirements = state.step1Response.accepts[0];
       
-      console.log('\n📋 [CLIENT] Raw payment requirements received:');
-      console.log(JSON.stringify(requirements, null, 2));
-      
       // Validate required fields
       if (!requirements.asset && !requirements.token) {
-        throw new Error('Missing token address in payment requirements (expected "asset" or "token" field)');
+        throw new Error('Missing token address');
       }
       if (!requirements.maxAmountRequired && !requirements.amount) {
-        throw new Error('Missing amount in payment requirements (expected "maxAmountRequired" or "amount" field)');
+        throw new Error('Missing amount');
       }
       if (!requirements.payTo && !requirements.to) {
-        throw new Error('Missing recipient in payment requirements (expected "payTo" or "to" field)');
+        throw new Error('Missing recipient');
       }
       
-      // Support both field names (middleware uses different names)
       const tokenAddress = (requirements.asset || requirements.token).toLowerCase();
       const amount = requirements.maxAmountRequired || requirements.amount;
       const recipient = requirements.payTo || requirements.to;
       
-      console.log('\n💰 [CLIENT] Payment Requirements (validated):');
-      console.log('   Amount:', formatTokenAmount(amount));
-      console.log('   Recipient:', recipient);
-      console.log('   Token:', tokenAddress, '(STRK)');
+      console.log('💰 Payment:', formatTokenAmount(amount), 'STRK to', recipient.slice(0, 10) + '...');
 
-      // Initialize Starknet provider and account
-      console.log('\n🔗 [CLIENT] Initializing Starknet provider...');
       const nodeUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL || 'https://starknet-sepolia.public.blastapi.io';
-      console.log('   Node URL:', nodeUrl);
-      
       const provider = new RpcProvider({ nodeUrl });
-      console.log('   Provider created:', !!provider);
-      
-      console.log('\n👤 [CLIENT] Creating account instance from private key...');
-      console.log('   Parameters for Account():');
-      console.log('     provider:', !!provider);
-      console.log('     address:', clientAddress);
-      console.log('     address length:', clientAddress?.length);
-      console.log('     privateKey:', clientPrivateKey ? `${clientPrivateKey.substring(0, 10)}...` : 'UNDEFINED');
-      console.log('     privateKey length:', clientPrivateKey?.length);
-      
-      // Create account with explicit Cairo 1 / V3 transaction support
       const clientAccount = new Account(provider, clientAddress, clientPrivateKey, '1');
-      console.log('   Account created:', !!clientAccount);
-      console.log('   Account.address:', clientAccount.address);
-      console.log('   Account configured for: Cairo 1 (V3 transactions)');
-      
-      // Check account balance before proceeding
-      console.log('\n💰 [CLIENT] Checking account balance...');
-      try {
-        const balance = await provider.callContract({
-          contractAddress: tokenAddress,
-          entrypoint: 'balanceOf',
-          calldata: [clientAddress],
-        });
-        const balanceAmount = num.toBigInt(balance[0]);
-        console.log('   STRK Balance:', balanceAmount.toString(), 'Wei', `(${formatTokenAmount(balanceAmount.toString())})`);
-        
-        if (balanceAmount === 0n) {
-          throw new Error(
-            '❌ Account has ZERO STRK balance!\n\n' +
-            'The account needs STRK tokens to pay for gas fees.\n\n' +
-            'Please fund the account:\n' +
-            `  Address: ${clientAddress}\n` +
-            '  Token: STRK\n' +
-            '  Faucet: https://starknet-faucet.vercel.app'
-          );
-        }
-        
-        console.log('   ✅ Account has sufficient STRK for gas');
-      } catch (balanceError) {
-        console.error('   ⚠️  Could not check balance:', balanceError);
-        // Continue anyway, the execute call will fail if there's no balance
-      }
 
-      // Step 1: Get account nonce for signing
-      console.log('\n📋 [CLIENT] Step 1: Getting account nonce...');
-      console.log('   Account:', clientAddress);
-      
-      const accountNonce = await clientAccount.getNonce();
-      
-      console.log('   Current Nonce:', accountNonce);
-      console.log('   ✅ Nonce retrieved!');
-
-      // Step 2: Sign the transfer transaction
-        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('✍️  [CLIENT] Step 2: SIGNING TRANSFER TRANSACTION');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('   This is a PRE-SIGNED transaction');
-      console.log('   User signs the transaction, facilitator will broadcast it');
-
-      console.log('   Token:', tokenAddress);
-      console.log('   Recipient:', recipient);
-      console.log('   Amount:', formatTokenAmount(amount));
-
-      // Step 3: Generate nonce for payment
-      console.log('\n🎲 [CLIENT] Step 3: Generating unique nonce and deadline...');
-      // Generate a random nonce that fits in a Starknet felt (< 252 bits)
-      // Use a 31-byte random value to ensure it's always < CURVE.P
-      const bytes = new Uint8Array(31); // 31 bytes = 248 bits < 252 bits
+      // Generate unique nonce and deadline
+      const bytes = new Uint8Array(31);
       crypto.getRandomValues(bytes);
       const nonce = '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      const deadline = Math.floor(Date.now() / 1000) + 300; // 5 minutes
-      
-      console.log('   Nonce:', nonce);
-      console.log('   Deadline:', deadline, '(', new Date(deadline * 1000).toISOString(), ')');
+      const deadline = Math.floor(Date.now() / 1000) + 300;
 
-      // Step 4: Sign the payment message with Starknet typed data
-      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('✍️  [CLIENT] Step 4: PAYMENT SIGNING PREPARATION');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('   This is OFF-CHAIN and GASLESS!');
-      
-      console.log('\n📊 [CLIENT] VARIABLES CHECK - Before Signing Payment:');
-      console.log('   ╔═══════════════════════════════════════════════════════════');
-      console.log('   ║ clientAddress:');
-      console.log('   ║   Value:', clientAddress);
-      console.log('   ║   Type:', typeof clientAddress);
-      console.log('   ║   Is Undefined?', clientAddress === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ recipient (from requirements):');
-      console.log('   ║   Value:', recipient);
-      console.log('   ║   Type:', typeof recipient);
-      console.log('   ║   Is Undefined?', recipient === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ tokenAddress:');
-      console.log('   ║   Value:', tokenAddress);
-      console.log('   ║   Type:', typeof tokenAddress);
-      console.log('   ║   Is Undefined?', tokenAddress === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ amount (from requirements):');
-      console.log('   ║   Value:', amount);
-      console.log('   ║   Type:', typeof amount);
-      console.log('   ║   Is Undefined?', amount === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ nonce:');
-      console.log('   ║   Value:', nonce);
-      console.log('   ║   Type:', typeof nonce);
-      console.log('   ║   Is Undefined?', nonce === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ deadline:');
-      console.log('   ║   Value:', deadline);
-      console.log('   ║   Type:', typeof deadline);
-      console.log('   ║   Is Undefined?', deadline === undefined);
-      console.log('   ╠═══════════════════════════════════════════════════════════');
-      console.log('   ║ clientAccount:');
-      console.log('   ║   Exists?', !!clientAccount);
-      console.log('   ║   Has signMessage method?', typeof clientAccount?.signMessage === 'function');
-      console.log('   ╚═══════════════════════════════════════════════════════════');
-      
-      // CRITICAL CHECK: Verify ALL required variables for signing
-      const missingSignVars: string[] = [];
-      if (!clientAddress) missingSignVars.push('clientAddress');
-      if (!recipient) missingSignVars.push('recipient');
-      if (!tokenAddress) missingSignVars.push('tokenAddress');
-      if (!amount) missingSignVars.push('amount');
-      if (!nonce) missingSignVars.push('nonce');
-      if (!deadline) missingSignVars.push('deadline');
-      if (!clientAccount) missingSignVars.push('clientAccount');
-      
-      if (missingSignVars.length > 0) {
-        const errorMsg = 
-          '🚨 FATAL ERROR: Cannot proceed with payment signing!\n\n' +
-          'Missing/Undefined Variables:\n' +
-          missingSignVars.map(v => `  ❌ ${v}`).join('\n') +
-          '\n\n' +
-          '⚠️  Critical variables are missing!\n' +
-          '⚠️  Check environment variables and restart dev server.\n';
-        
-        console.error('\n' + errorMsg);
-        throw new Error(errorMsg);
-      }
-      
-      console.log('\n✅ [CLIENT] All signing variables verified!');
-      console.log('   Proceeding with message creation and signing...\n');
+      // Sign the payment message
+      console.log('✍️  Signing payment message...');
       
       const message = {
         types: {
@@ -375,13 +187,6 @@ export default function DemoPage() {
           deadline: deadline.toString(),
         },
       };
-
-      console.log('   Payment Details:');
-      console.log('     From:', clientAddress);
-      console.log('     To:', recipient);
-      console.log('     Token:', tokenAddress, '(STRK)');
-      console.log('     Amount:', amount, 'Wei', `(${formatTokenAmount(amount)})`);
-      console.log('   📝 [CLIENT] Signing message with Starknet typed data...');
       
       const signature = await clientAccount.signMessage(message);
       
@@ -393,12 +198,7 @@ export default function DemoPage() {
       const sigR = typeof sigRRaw === 'bigint' ? '0x' + sigRRaw.toString(16) : sigRRaw;
       const sigS = typeof sigSRaw === 'bigint' ? '0x' + sigSRaw.toString(16) : sigSRaw;
       
-      console.log('   ✅ [CLIENT] Payment signed! (NO GAS COST)');
-      console.log('   Signature r:', sigR);
-      console.log('   Signature s:', sigS);
-
-      // Step 5: Create payment payload
-      console.log('\n📦 [CLIENT] Step 5: Creating X-PAYMENT header...');
+      console.log('✅ Payment signed');
           const paymentPayload = {
             x402Version: 1,
             scheme: 'exact',
@@ -418,26 +218,12 @@ export default function DemoPage() {
           };
 
       const paymentHeader = btoa(JSON.stringify(paymentPayload));
-
-      console.log('   Payload created with', Object.keys(paymentPayload.payload).length, 'fields');
-      console.log('   Base64 encoded length:', paymentHeader.length, 'characters');
-
       const requestHeaders = {
             'Content-Type': 'application/json',
         'X-PAYMENT': paymentHeader,
       };
 
-      // Step 6: Send request with payment
-      console.log('\n📤 [CLIENT] Step 6: Sending request with X-PAYMENT header...');
-      console.log('   Endpoint:', endpoint);
-      console.log('   Headers:', Object.keys(requestHeaders).join(', '));
-      console.log('   This will trigger:');
-      console.log('     1️⃣ [SERVER] Middleware intercepts request');
-      console.log('     2️⃣ [SERVER] Middleware calls facilitator /verify');
-      console.log('     3️⃣ [FACILITATOR] Verifies signature & checks balance');
-      console.log('     4️⃣ [SERVER] Middleware calls facilitator /settle');
-      console.log('     5️⃣ [FACILITATOR] Executes transfer_from on-chain');
-      console.log('     6️⃣ [SERVER] Returns 200 + weather data');
+      console.log('📤 Sending request with X-PAYMENT header...');
       
       const startTime = performance.now();
       const response = await fetch(`${endpoint}`, {
@@ -446,9 +232,7 @@ export default function DemoPage() {
       });
       const endTime = performance.now();
       
-      console.log('\n📥 [CLIENT] Response received!');
-      console.log('   Status:', response.status, response.status === 200 ? '✅ SUCCESS' : '❌ FAILED');
-      console.log('   Time:', Math.round(endTime - startTime), 'ms');
+      console.log('📥 Response:', response.status, response.status === 200 ? '✅' : '❌', `(${Math.round(endTime - startTime)}ms)`);
 
       const headers: Record<string, string> = {};
       response.headers.forEach((value, key) => {
@@ -457,13 +241,9 @@ export default function DemoPage() {
 
       const data: any = await response.json();
       
-      // Check if payment failed (402 or other non-200 status)
+      // Check if payment failed
       if (response.status !== 200) {
-        console.error('\n❌ [CLIENT] Payment failed!');
-        console.error('   Status:', response.status);
-        console.error('   Error:', data.error || 'Unknown error');
-        console.error('   Message:', data.message || '');
-        
+        console.error('❌ Payment failed:', data.message || data.error);
         const errorMsg = `Payment failed (${response.status}): ${data.message || data.error || 'Unknown error'}`;
         setState(prev => ({ 
           ...prev, 
@@ -480,7 +260,6 @@ export default function DemoPage() {
       // Success - extract transaction hash
       const settlementHeader = response.headers.get('X-PAYMENT-RESPONSE');
       let txHash = '';
-
             if (settlementHeader) {
               try {
                 const settlement = JSON.parse(atob(settlementHeader));
@@ -490,8 +269,7 @@ export default function DemoPage() {
         }
       }
 
-      console.log('\n✅ [CLIENT] Payment successful!');
-      console.log('   Transaction hash:', txHash);
+      console.log('✅ Payment successful! Tx:', txHash.slice(0, 10) + '...');
 
       setState(prev => ({ 
         ...prev, 
@@ -503,12 +281,8 @@ export default function DemoPage() {
         step2RequestHeaders: requestHeaders
       }));
     } catch (error) {
-      console.error('\n🚨 [CLIENT] ERROR OCCURRED:');
-      console.error('   Error type:', error?.constructor?.name);
-      console.error('   Error message:', error instanceof Error ? error.message : String(error));
-      console.error('   Full error:', error);
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error: ' + String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('🚨 Error:', errorMessage);
       setState(prev => ({ 
         ...prev, 
         error: errorMessage,

@@ -85,20 +85,8 @@ export async function POST(request: NextRequest) {
       const privateKey = process.env.FACILITATOR_PRIVATE_KEY;
       const accountAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
 
-    console.log('[Facilitator /settle] ========================================');
-    console.log('[Facilitator /settle] CONFIGURATION DEBUG');
-    console.log('[Facilitator /settle] ========================================');
-    console.log('[Facilitator /settle] Node URL:', nodeUrl);
-    console.log('[Facilitator /settle] Network:', nodeUrl.includes('sepolia') ? 'SEPOLIA ✅' : 'UNKNOWN NETWORK ⚠️');
-    console.log('[Facilitator /settle] Private Key (first 20 chars):', privateKey ? privateKey.substring(0, 20) + '...' : '❌ UNDEFINED');
-    console.log('[Facilitator /settle] Private Key (full):', privateKey);
-    console.log('[Facilitator /settle] Account Address:', accountAddress);
-    console.log('[Facilitator /settle] Account Address matches expected?', accountAddress === '0x02a8a171dc53d51916e1db63c239a77658b5d2e8c129f2800e0fc47d794b236e' ? '✅ YES' : '❌ NO');
-    console.log('[Facilitator /settle] ========================================');
-
     if (!privateKey || !accountAddress) {
-      console.error('[Facilitator /settle] ❌ Missing configuration!');
-      console.error('  Required env vars: FACILITATOR_PRIVATE_KEY, NEXT_PUBLIC_FACILITATOR_ADDRESS');
+      console.error('[Facilitator] Missing configuration');
       return NextResponse.json({
         success: false,
         error: 'Facilitator not configured. Missing: ' + 
@@ -110,26 +98,12 @@ export async function POST(request: NextRequest) {
     }
 
       try {
-        // Initialize Starknet provider and account
+        console.log('[Facilitator] Settling payment on-chain...');
+        
         const provider = new RpcProvider({ nodeUrl });
-        
-        console.log('[Facilitator /settle] Starting settlement...');
-        
-        // Initialize account - try WITHOUT specifying Cairo version (let it auto-detect)
-        console.log('[Facilitator /settle] Initializing facilitator account (auto-detect version)...');
         const facilitatorAccount = new Account(provider, accountAddress, privateKey);
-        
-        console.log('[Facilitator /settle] Payment details:');
-        console.log('[Facilitator /settle] From:', paymentPayload.payload.from);
-        console.log('[Facilitator /settle] To:', paymentPayload.payload.to);
-        console.log('[Facilitator /settle] Token:', paymentPayload.payload.token);
-        console.log('[Facilitator /settle] Amount:', paymentPayload.payload.amount);
 
-        // Try the SIMPLEST possible approach - manual invoke
-        console.log('[Facilitator /settle] Attempting manual invoke...');
-        
         try {
-          // Build the most basic possible call
           const call = {
             contractAddress: paymentPayload.payload.token,
             entrypoint: 'transfer_from',
@@ -141,36 +115,22 @@ export async function POST(request: NextRequest) {
             ]
           };
           
-          console.log('[Facilitator /settle] Call object:', JSON.stringify(call, null, 2));
-          
-          // Use invoke method directly on the account signer
-          console.log('[Facilitator /settle] Calling account.execute()...');
-          
-          // Estimate fee first to avoid version issues
-          console.log('[Facilitator /settle] Estimating fee...');
+          // Estimate fee
           try {
             const feeEstimate = await facilitatorAccount.estimateInvokeFee(call);
-            console.log('[Facilitator /settle] Fee estimate:', feeEstimate);
-            
-            // Use 150% of estimated fee as maxFee
             const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
             const maxFee = (suggestedMaxFee * 150n) / 100n;
             
-            console.log('[Facilitator /settle] Using maxFee:', maxFee.toString());
-            
             const { transaction_hash } = await facilitatorAccount.execute(call, { maxFee });
             
-            console.log('[Facilitator /settle] ✅ Transaction submitted:', transaction_hash);
-            console.log('[Facilitator /settle] Waiting for confirmation...');
-
             // Wait for transaction confirmation
             await provider.waitForTransaction(transaction_hash, {
               successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1'],
             });
 
-            console.log('[Facilitator /settle] ✅ Settlement confirmed!');
 
-            // Return settlement response
+            console.log('[Facilitator] ✅ Settlement successful | Tx:', transaction_hash.slice(0, 10) + '...');
+            
             return NextResponse.json({
               success: true,
               error: null,
@@ -178,21 +138,13 @@ export async function POST(request: NextRequest) {
               networkId: paymentPayload.network,
             });
           } catch (feeError: any) {
-            console.error('[Facilitator /settle] Fee estimation failed:', feeError.message);
             throw new Error(`Fee estimation failed: ${feeError.message}`);
           }
         } catch (execError: any) {
-          console.error('[Facilitator /settle] Execute error:', execError);
-          console.error('[Facilitator /settle] Error stack:', execError.stack);
           throw execError;
         }
       } catch (error: any) {
-        console.error('[Facilitator /settle] ❌ Settlement transaction failed:', error);
-        console.error('[Facilitator /settle] Error name:', error.name);
-        console.error('[Facilitator /settle] Error message:', error.message);
-        if (error.stack) {
-          console.error('[Facilitator /settle] Stack trace:', error.stack);
-        }
+        console.error('[Facilitator] Settlement failed:', error.message);
         return NextResponse.json({
           success: false,
           error: error.message || 'Transaction execution failed',

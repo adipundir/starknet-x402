@@ -118,10 +118,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify signature is present
-    console.log('[Facilitator /verify] Checking signature...');
-    console.log('[Facilitator /verify] Signature object:', paymentPayload.payload.signature);
-    console.log('[Facilitator /verify] Has r?', !!paymentPayload.payload.signature?.r);
-    console.log('[Facilitator /verify] Has s?', !!paymentPayload.payload.signature?.s);
     
     if (!paymentPayload.payload.signature?.r || !paymentPayload.payload.signature?.s) {
       console.error('[Facilitator /verify] ❌ Signature missing or invalid!');
@@ -132,11 +128,6 @@ export async function POST(request: NextRequest) {
     }
 
     // CRITICAL: Verify the cryptographic signature using official Starknet.js
-    console.log('[Facilitator /verify] Verifying signature...');
-    console.log('[Facilitator /verify] ⚠️  WARNING: Signature verification is currently SKIPPED for testing');
-    console.log('[Facilitator /verify] TODO: Implement proper on-chain signature verification');
-    console.log('[Facilitator /verify] Signature r:', paymentPayload.payload.signature.r);
-    console.log('[Facilitator /verify] Signature s:', paymentPayload.payload.signature.s);
     
     // NOTE: For now, we skip signature verification because Account.verifyMessage() 
     // requires on-chain interaction with the account contract, which may have 
@@ -147,14 +138,12 @@ export async function POST(request: NextRequest) {
     // 2. Or use Account.verifyMessage() with proper account setup
     // 3. Or verify signature matches the account's signer public key
     
-    console.log('[Facilitator /verify] ✅ Signature verification SKIPPED (accepting all signatures for now)');
 
     // Check on-chain conditions (balance and allowance)
     try {
       const nodeUrl = process.env.STARKNET_NODE_URL || process.env.NEXT_PUBLIC_STARKNET_NODE_URL || 'https://starknet-sepolia.public.blastapi.io';
       const facilitatorAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
 
-      console.log('[Facilitator /verify] Configuration check:');
       console.log('  Node URL:', nodeUrl ? '✅' : '❌');
       console.log('  Facilitator Address:', facilitatorAddress ? '✅' : '❌');
 
@@ -165,7 +154,6 @@ export async function POST(request: NextRequest) {
         const provider = new RpcProvider({ nodeUrl });
 
         // Check user's token balance
-        console.log('[Facilitator /verify] Checking balance for:', paymentPayload.payload.from);
         const balanceResult = await provider.callContract({
           contractAddress: paymentPayload.payload.token,
           entrypoint: 'balanceOf',
@@ -173,7 +161,6 @@ export async function POST(request: NextRequest) {
         });
 
         const balance = num.toBigInt(balanceResult[0]);
-        console.log('[Facilitator /verify] Balance:', balance.toString());
 
         if (balance < paymentAmount) {
           return NextResponse.json({
@@ -183,7 +170,6 @@ export async function POST(request: NextRequest) {
         }
 
         // Check allowance for facilitator
-        console.log('[Facilitator /verify] Checking allowance...');
         const allowanceResult = await provider.callContract({
           contractAddress: paymentPayload.payload.token,
           entrypoint: 'allowance',
@@ -191,7 +177,6 @@ export async function POST(request: NextRequest) {
         });
 
         const allowance = num.toBigInt(allowanceResult[0]);
-        console.log('[Facilitator /verify] Allowance:', allowance.toString());
 
         if (allowance < paymentAmount) {
           return NextResponse.json({
@@ -200,7 +185,6 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        console.log('[Facilitator /verify] ✅ Balance and allowance checks passed');
       }
     } catch (onChainError) {
       console.error('[Facilitator /verify] On-chain verification failed:', onChainError);
@@ -211,7 +195,6 @@ export async function POST(request: NextRequest) {
     }
 
     // All validations passed
-    console.log('[Facilitator /verify] ✅ All validations passed');
     return NextResponse.json({
       isValid: true,
       invalidReason: null,
