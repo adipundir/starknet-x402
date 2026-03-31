@@ -10,9 +10,10 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <span className="font-bold text-lg">starknet x402</span>
           <div className="flex gap-1">
+            <Link href="/docs" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Docs</Link>
             <Link href="/demo" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Demo</Link>
             <a href="https://github.com/adipundir/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">GitHub</a>
-            <a href="https://www.npmjs.com/package/@adipundir/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">npm</a>
+            <a href="https://www.npmjs.com/package/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">npm</a>
           </div>
         </div>
       </nav>
@@ -25,20 +26,21 @@ export default function LandingPage() {
             Pay for APIs with<br />Circle's USDC on Starknet.
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            No unlimited approvals needed. Secure one-time payments with gas sponsorship.
+            <span className="text-white font-medium">No unlimited approvals needed.</span> Secure one-time payments with gas sponsorship.
           </p>
+          <pre className="inline-block bg-zinc-950 border border-zinc-800 text-zinc-300 px-6 py-3 rounded-lg font-mono text-sm mb-10">
+            npm install starknet-x402
+          </pre>
           <div className="flex justify-center gap-3">
-            <Link href="/demo" className="px-8 py-3 bg-white text-black text-sm rounded-md hover:bg-zinc-200 transition">
-              demo
+            <Link href="/demo" className="px-6 py-2.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition">
+              Try Demo
             </Link>
-            <a
-              href="https://github.com/adipundir/starknet-x402#quick-start"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-8 py-3 border border-zinc-700 text-sm rounded-md hover:border-zinc-500 transition"
+            <Link
+              href="/docs"
+              className="px-6 py-2.5 text-sm text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition"
             >
-              docs
-            </a>
+              Read Docs
+            </Link>
           </div>
         </div>
       </section>
@@ -72,15 +74,6 @@ export default function LandingPage() {
     |    PAYMENT-RESPONSE: {tx}      |                              |`}
             </pre>
           </div>
-        </div>
-      </section>
-
-      {/* Install */}
-      <section className="border-t border-white/5">
-        <div className="max-w-5xl mx-auto px-6 py-14 text-center">
-          <pre className="inline-block bg-zinc-950 border border-zinc-800 text-zinc-300 px-8 py-4 rounded-xl font-mono text-sm">
-            npm install starknet-x402 starknet
-          </pre>
         </div>
       </section>
 
@@ -131,7 +124,7 @@ console.log(result.data);`}
       <section className="border-t border-white/5">
         <div className="max-w-5xl mx-auto px-6 py-24 text-center">
           <h2 className="text-6xl md:text-8xl font-bold tracking-tighter text-zinc-800">
-            starknet x402
+            starknet x402 <span className="text-3xl md:text-4xl text-zinc-700">v2</span>
           </h2>
         </div>
       </section>
@@ -147,7 +140,7 @@ console.log(result.data);`}
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
               </a>
               {/* npm */}
-              <a href="https://www.npmjs.com/package/@adipundir/starknet-x402" target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-white transition" title="npm">
+              <a href="https://www.npmjs.com/package/starknet-x402" target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-white transition" title="npm">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.331h-2.669zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z"/></svg>
               </a>
               {/* X / Twitter — project */}

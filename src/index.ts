@@ -44,4 +44,3 @@ export {
 export { buildTransferCall, ANY_CALLER } from './types/typed-data';
 export { StarknetVerifier } from './facilitator/starknet-verifier';
 export { StarknetSettler } from './facilitator/starknet-settler';
-export { isNewPayload, markProcessed } from './facilitator/nonce-tracker';

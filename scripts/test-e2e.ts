@@ -13,7 +13,6 @@ dotenv.config();
 
 import { Account, RpcProvider } from 'starknet';
 import { signPayment } from '../lib/x402/client-payment';
-import { x402axios } from '../lib/x402/axios';
 import type { PaymentRequirements, PaymentRequiredResponse, SupportedResponse } from '../lib/x402/types';
 import { PAYMENT_REQUIRED_HEADER } from '../lib/x402/types';
 
@@ -31,8 +30,8 @@ const STRK_AMOUNT = '10000000000000000'; // 0.01 STRK
 let passed = 0;
 let failed = 0;
 
-function ok(name: string) { passed++; console.log(`  PASS\n`); }
-function fail(name: string, reason: string) { failed++; console.log(`  FAIL: ${reason}\n`); }
+function ok(_name: string) { passed++; console.log(`  PASS\n`); }
+function fail(_name: string, reason: string) { failed++; console.log(`  FAIL: ${reason}\n`); }
 
 async function main() {
   console.log('================================================');

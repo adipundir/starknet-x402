@@ -1,0 +1,181 @@
+# starknet-x402 Integration Guide
+
+You are integrating the starknet-x402 SDK — an HTTP-native payment protocol for Starknet using SNIP-9 Outside Execution.
+
+Users pay for API access with USDC. No ERC-20 approvals needed. No gas for users. The AVNU paymaster sponsors gas.
+
+## Install
+
+```
+npm install starknet-x402
+```
+
+Dependencies `starknet` and `axios` install automatically. `next` is a peer dependency (needed for server middleware only).
+
+## Server Setup (Next.js middleware)
+
+Create `middleware.ts` at the project root:
+
+```typescript
+import { paymentMiddleware, TOKENS } from 'starknet-x402';
+
+export const middleware = paymentMiddleware(
+  process.env.RECIPIENT_ADDRESS!,       // Starknet address that receives payments
+  {
+    '/api/weather': {
+      price: '10000',                    // 0.01 USDC (6 decimals)
+      tokenAddress: TOKENS.USDC_SEPOLIA, // use TOKENS.USDC_MAINNET for mainnet
+      network: 'sepolia',                // 'sepolia' | 'mainnet'
+    },
+  },
+  { url: process.env.FACILITATOR_URL! } // facilitator service URL
+);
+
+export const config = {
+  matcher: '/api/:path*',
+};
+```
+
+The API route itself requires zero changes. Write it as a normal Next.js route handler:
+
+```typescript
+// app/api/weather/route.ts
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  return NextResponse.json({ city: 'Cairo', temp: '34°C' });
+}
+```
+
+### Route config options
+
+- price (string, required): Amount in token's smallest unit. USDC has 6 decimals, so '1000000' = 1 USDC.
+- tokenAddress (string, required): ERC-20 token contract address. Use the exported TOKENS constants.
+- network (string, optional): 'sepolia' or 'mainnet'. Defaults to 'sepolia'.
+- config.description (string, optional): Human-readable resource description.
+- config.mimeType (string, optional): Response MIME type.
+- config.maxTimeoutSeconds (number, optional): Settlement timeout. Default 300.
+
+## Client Setup
+
+### x402axios (recommended)
+
+```typescript
+import { x402axios } from 'starknet-x402';
+import { Account, RpcProvider } from 'starknet';
+
+const provider = new RpcProvider({ nodeUrl: process.env.STARKNET_RPC_URL });
+const account = new Account(provider, address, privateKey);
+
+const result = await x402axios.get('https://api.example.com/api/weather', {
+  account,
+  network: 'starknet-sepolia',
+});
+
+console.log(result.data);                    // API response
+console.log(result.settlement?.transaction); // tx hash
+```
+
+All HTTP methods: x402axios.get, .post, .put, .patch, .delete.
+
+For POST with body:
+```typescript
+await x402axios.post(url, {
+  account,
+  network: 'starknet-sepolia',
+  data: { query: 'something' },
+});
+```
+
+### payAndRequest (native fetch)
+
+```typescript
+import { payAndRequest } from 'starknet-x402';
+
+const response = await payAndRequest(
+  'https://api.example.com/api/weather',
+  account,
+  { network: 'starknet-sepolia' },
+);
+const data = await response.json();
+```
+
+### Client options
+
+- account (Account, required): Starknet.js Account instance. Used for signing only.
+- network (string, required): 'starknet-sepolia' or 'starknet-mainnet'. Must match server.
+- paymasterUrl (string, optional): Override AVNU paymaster URL.
+- paymasterApiKey (string, optional): API key for paymaster.
+
+## Token Addresses
+
+```typescript
+import { TOKENS } from 'starknet-x402';
+
+TOKENS.USDC_SEPOLIA  // 0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343
+TOKENS.USDC_MAINNET  // 0x033068F6539f8e6e6b131e6B2B814e6c34A5224bC66947c47DaB9dFeE93b35fb
+TOKENS.STRK_SEPOLIA  // 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+TOKENS.ETH           // 0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+```
+
+## USDC Pricing (6 decimals)
+
+0.001 USDC = '1000'
+0.01  USDC = '10000'
+0.10  USDC = '100000'
+1.00  USDC = '1000000'
+
+## Paymaster
+
+AVNU paymaster is used by default. Gas is sponsored for all transactions.
+
+Sepolia: https://sepolia.paymaster.avnu.fi
+Mainnet: https://starknet.paymaster.avnu.fi
+
+## Environment Variables
+
+```
+STARKNET_RPC_URL=https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/...
+RECIPIENT_ADDRESS=0x...
+FACILITATOR_URL=https://...
+```
+
+## Protocol Flow
+
+1. Client sends GET /api/data
+2. Server returns 402 with PAYMENT-REQUIRED header (base64 JSON with payment requirements)
+3. Client signs an OutsideExecution (SNIP-9) containing token.transfer() via AVNU paymaster
+4. Client retries the request with PAYMENT-SIGNATURE header
+5. Server sends the signed payload to facilitator POST /verify, then POST /settle
+6. Facilitator executes the transfer on-chain, returns tx hash
+7. Client receives 200 + data + PAYMENT-RESPONSE header
+
+## Headers
+
+- PAYMENT-REQUIRED (Server → Client): Base64 encoded payment requirements on 402 response
+- PAYMENT-SIGNATURE (Client → Server): Base64 encoded signed payment payload
+- PAYMENT-RESPONSE (Server → Client): Base64 encoded settlement result with tx hash
+
+## Key Exports
+
+```typescript
+// Client
+export { x402axios, X402PaymentError, type X402RequestConfig, type X402Response } from 'starknet-x402';
+export { payAndRequest, signPayment, requestWithPayment } from 'starknet-x402';
+
+// Server
+export { paymentMiddleware } from 'starknet-x402';
+
+// Types & constants
+export { TOKENS, NETWORKS, SCHEMES } from 'starknet-x402';
+export { buildTransferCall, ANY_CALLER } from 'starknet-x402';
+export type { RouteConfig, FacilitatorConfig, PaymentRequirements, PaymentPayload } from 'starknet-x402';
+```
+
+## Integration Checklist
+
+1. npm install starknet-x402
+2. Create middleware.ts with paymentMiddleware, define routes with price and token
+3. Set RECIPIENT_ADDRESS and FACILITATOR_URL in .env
+4. Write your API routes normally — the middleware handles payment gating
+5. On the client, use x402axios with an Account and network to make paid requests

@@ -3,9 +3,6 @@
  *
  * Payment info flows through headers:
  *   PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE
- *
- * The middleware only contacts the facilitator when a payment is present.
- * Sponsorship discovery is the client's responsibility via /supported.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -41,10 +38,7 @@ export function paymentMiddleware(
 
     if (!routeConfig) return NextResponse.next();
 
-    console.log(`[x402 middleware] ${request.method} ${pathname}`);
-
     if (!recipientAddress) {
-      console.error('[x402 middleware] No recipient configured');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
@@ -54,9 +48,6 @@ export function paymentMiddleware(
       : simpleNetwork === 'sepolia'
         ? STARKNET_SEPOLIA
         : `starknet-${simpleNetwork}`;
-
-    const description = routeConfig.config?.description || 'Access to protected resource';
-    const mimeType = routeConfig.config?.mimeType || 'application/json';
 
     const paymentRequirements: PaymentRequirements = {
       scheme: STARKNET_SCHEME,
@@ -69,44 +60,38 @@ export function paymentMiddleware(
 
     const paymentHeader = getPaymentHeader(request.headers);
 
-    // No payment → return 402 immediately (no facilitator call)
+    // No payment → return 402
     if (!paymentHeader) {
-      console.log('[x402 middleware] No PAYMENT-SIGNATURE header, returning 402');
       const response402: PaymentRequiredResponse = {
         x402Version: X402_VERSION,
         error: 'PAYMENT-SIGNATURE header is required',
-        resource: { url: request.url, description, mimeType },
+        resource: {
+          url: request.url,
+          description: routeConfig.config?.description,
+          mimeType: routeConfig.config?.mimeType,
+        },
         accepts: [paymentRequirements],
       };
 
-      const encoded = Buffer.from(JSON.stringify(response402)).toString('base64');
       const res = NextResponse.json(response402, { status: 402 });
-      res.headers.set(PAYMENT_REQUIRED_HEADER, encoded);
+      res.headers.set(PAYMENT_REQUIRED_HEADER, Buffer.from(JSON.stringify(response402)).toString('base64'));
       return res;
     }
 
-    console.log(`[x402 middleware] PAYMENT-SIGNATURE header found (${paymentHeader.length} chars)`);
-
-    // Payment present → validate, then call facilitator
+    // Payment present → validate, verify, settle
     try {
       const paymentPayload = decodePaymentHeader(paymentHeader);
       if (!validatePaymentPayload(paymentPayload)) {
-        console.error('[x402 middleware] Invalid payment payload structure');
         return NextResponse.json({ error: 'Invalid payment payload' }, { status: 400 });
       }
 
-      console.log(`[x402 middleware] Payload decoded | from: ${paymentPayload.payload.from.slice(0, 12)}... | amount: ${paymentPayload.payload.amount}`);
-
       if (paymentPayload.accepted.scheme !== STARKNET_SCHEME) {
-        console.error(`[x402 middleware] Unsupported scheme: ${paymentPayload.accepted.scheme}`);
         return NextResponse.json({ error: 'Unsupported payment scheme' }, { status: 400 });
       }
 
       const facilitatorUrl = facilitatorConfig.url;
 
       // Verify
-      console.log('[x402 middleware] Calling facilitator /verify...');
-      const verifyStart = Date.now();
       const verifyRes = await fetch(`${facilitatorUrl}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,7 +99,6 @@ export function paymentMiddleware(
       });
 
       if (!verifyRes.ok) {
-        console.error(`[x402 middleware] Facilitator /verify returned HTTP ${verifyRes.status}`);
         return NextResponse.json(
           { error: 'Facilitator verification unavailable', message: `HTTP ${verifyRes.status}` },
           { status: 502 },
@@ -122,8 +106,6 @@ export function paymentMiddleware(
       }
 
       const verification = await verifyRes.json() as VerifyResponse;
-      console.log(`[x402 middleware] Verification: ${verification.isValid ? 'VALID' : 'INVALID'} (${Date.now() - verifyStart}ms)${verification.isValid ? '' : ' | reason: ' + verification.invalidReason}`);
-
       if (!verification.isValid) {
         return NextResponse.json(
           { error: 'Payment verification failed', message: verification.invalidReason },
@@ -132,8 +114,6 @@ export function paymentMiddleware(
       }
 
       // Settle
-      console.log('[x402 middleware] Calling facilitator /settle...');
-      const settleStart = Date.now();
       const settleRes = await fetch(`${facilitatorUrl}/settle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +121,6 @@ export function paymentMiddleware(
       });
 
       if (!settleRes.ok) {
-        console.error(`[x402 middleware] Facilitator /settle returned HTTP ${settleRes.status}`);
         return NextResponse.json(
           { error: 'Facilitator settlement unavailable', message: `HTTP ${settleRes.status}` },
           { status: 502 },
@@ -149,8 +128,6 @@ export function paymentMiddleware(
       }
 
       const settlement = await settleRes.json() as SettleResponse;
-      console.log(`[x402 middleware] Settlement: ${settlement.success ? 'SUCCESS' : 'FAILED'} (${Date.now() - settleStart}ms)${settlement.success ? ' | tx: ' + settlement.transaction?.slice(0, 16) + '...' : ' | reason: ' + settlement.errorReason}`);
-
       if (!settlement.success) {
         return NextResponse.json(
           { error: 'Payment settlement failed', message: settlement.errorReason },
@@ -158,8 +135,7 @@ export function paymentMiddleware(
         );
       }
 
-      // Payment settled → allow request through
-      console.log(`[x402 middleware] Payment complete, passing request through`);
+      // Payment settled → pass through
       const response = NextResponse.next();
       response.headers.set(
         PAYMENT_RESPONSE_HEADER,
@@ -173,7 +149,7 @@ export function paymentMiddleware(
 
       return response;
     } catch (error) {
-      console.error('[x402 middleware] Error:', error instanceof Error ? error.message : String(error));
+      console.error('[x402 middleware]', error instanceof Error ? error.message : String(error));
       return NextResponse.json(
         { error: 'Payment processing failed', message: error instanceof Error ? error.message : String(error) },
         { status: 500 },
