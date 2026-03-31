@@ -1,213 +1,160 @@
 /**
- * Facilitator Verification Endpoint
- * Verifies payment payloads according to x402 protocol
+ * Facilitator Verification Endpoint (x402 v2)
+ *
+ * Validates payment payloads without executing on-chain.
+ * Checks: decode → structure → field matching → deadline →
+ * nonce → signature → balance → allowance.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { RpcProvider, num } from 'starknet';
+import { RpcProvider, CallData, typedData } from 'starknet';
+import {
+  type PaymentRequirements,
+  type VerifyResponse,
+  decodePaymentHeader,
+  validatePaymentPayload,
+  getRequiredAmount,
+  isValidStarknetAddress,
+  parseU256,
+} from '../../../../src/types/x402';
+import { buildPaymentTypedData } from '../../../../src/types/typed-data';
+import { isNonceFresh } from '../../../../src/facilitator/nonce-tracker';
 
-interface VerifyRequest {
-  x402Version: number;
-  paymentHeader: string;
-  paymentRequirements: {
-    scheme: string;
-    network: string;
-    maxAmountRequired: string;
-    payTo: string;
-    asset: string;
-    resource: string;
-    [key: string]: any;
-  };
-}
-
-interface PaymentPayload {
-  x402Version: number;
-  scheme: string;
-  network: string;
-  payload: {
-    from: string;
-    to: string;
-    token: string;
-    amount: string;
-    nonce: string;
-    deadline: number;
-    signature: {
-      r: string;
-      s: string;
-    };
-  };
+function fail(reason: string, payer?: string): NextResponse<VerifyResponse> {
+  return NextResponse.json({ isValid: false, invalidReason: reason, payer });
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as VerifyRequest;
-    const { x402Version, paymentHeader, paymentRequirements } = body;
+    const body = await request.json();
+    const { x402Version, paymentHeader, paymentRequirements } = body as {
+      x402Version: number;
+      paymentHeader: string;
+      paymentRequirements: PaymentRequirements;
+    };
 
-    // Validate request structure
     if (!x402Version || !paymentHeader || !paymentRequirements) {
-      return NextResponse.json(
-        {
-          isValid: false,
-          invalidReason: 'Missing required fields',
-        },
-        { status: 400 }
-      );
+      return fail('invalid_payment_requirements: missing required fields');
     }
 
-    // Decode payment header
-    let paymentPayload: PaymentPayload;
-    try {
-      const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8');
-      paymentPayload = JSON.parse(decoded);
-    } catch (error) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: 'Invalid payment header encoding',
-      });
+    // 1. Decode
+    const payload = decodePaymentHeader(paymentHeader);
+    if (!validatePaymentPayload(payload)) {
+      return fail('invalid_payload: malformed payment header');
     }
 
-    // Verify scheme matches
-    if (paymentPayload.scheme !== paymentRequirements.scheme) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `Scheme mismatch: expected ${paymentRequirements.scheme}, got ${paymentPayload.scheme}`,
-      });
+    const inner = payload.payload;
+    const { scheme, network } = payload.accepted;
+
+    // 2. Scheme & network
+    if (scheme !== paymentRequirements.scheme) {
+      return fail(`invalid_scheme: expected ${paymentRequirements.scheme}, got ${scheme}`, inner.from);
+    }
+    if (network !== paymentRequirements.network) {
+      return fail(`invalid_network: expected ${paymentRequirements.network}, got ${network}`, inner.from);
     }
 
-    // Verify network matches
-    if (paymentPayload.network !== paymentRequirements.network) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `Network mismatch: expected ${paymentRequirements.network}, got ${paymentPayload.network}`,
-      });
+    // 3. Addresses
+    if (!isValidStarknetAddress(inner.from)) {
+      return fail('invalid_payload: bad sender address', inner.from);
+    }
+    if (inner.to.toLowerCase() !== paymentRequirements.payTo.toLowerCase()) {
+      return fail('invalid_recipient_mismatch', inner.from);
+    }
+    if (inner.token.toLowerCase() !== paymentRequirements.asset.toLowerCase()) {
+      return fail('invalid_token_mismatch', inner.from);
     }
 
-    // Verify recipient address matches
-    if (paymentPayload.payload.to.toLowerCase() !== paymentRequirements.payTo.toLowerCase()) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `Recipient mismatch: expected ${paymentRequirements.payTo}, got ${paymentPayload.payload.to}`,
-      });
-    }
-
-    // Verify token address matches
-    if (paymentPayload.payload.token.toLowerCase() !== paymentRequirements.asset.toLowerCase()) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `Asset mismatch: expected ${paymentRequirements.asset}, got ${paymentPayload.payload.token}`,
-      });
-    }
-
-    // Verify amount is sufficient
-    const paymentAmount = BigInt(paymentPayload.payload.amount);
-    const requiredAmount = BigInt(paymentRequirements.maxAmountRequired);
+    // 4. Amount
+    const paymentAmount = BigInt(inner.amount);
+    const requiredAmount = getRequiredAmount(paymentRequirements);
     if (paymentAmount < requiredAmount) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `Insufficient amount: expected at least ${requiredAmount}, got ${paymentAmount}`,
-      });
+      return fail(`invalid_amount: sent ${paymentAmount}, need ${requiredAmount}`, inner.from);
     }
 
-    // Verify deadline hasn't passed
-    const currentTime = Math.floor(Date.now() / 1000);
-    if (paymentPayload.payload.deadline < currentTime) {
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: 'Payment deadline has passed',
-      });
+    // 5. Deadline
+    const now = Math.floor(Date.now() / 1000);
+    if (inner.deadline <= now) {
+      return fail('invalid_deadline: expired', inner.from);
     }
 
-    // Verify signature is present
-    
-    if (!paymentPayload.payload.signature?.r || !paymentPayload.payload.signature?.s) {
-      console.error('[Facilitator /verify] ❌ Signature missing or invalid!');
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: 'Missing or invalid signature',
-      });
+    // 6. Nonce freshness
+    if (!isNonceFresh(inner.nonce)) {
+      return fail('invalid_transaction_state: nonce already used', inner.from);
     }
 
-    // CRITICAL: Verify the cryptographic signature using official Starknet.js
-    
-    // NOTE: For now, we skip signature verification because Account.verifyMessage() 
-    // requires on-chain interaction with the account contract, which may have 
-    // different signing requirements than expected.
-    // 
-    // In production, you would:
-    // 1. Call is_valid_signature on the account contract
-    // 2. Or use Account.verifyMessage() with proper account setup
-    // 3. Or verify signature matches the account's signer public key
-    
+    // 7. Signature presence
+    if (!inner.signature?.r || !inner.signature?.s) {
+      return fail('invalid_signature: missing', inner.from);
+    }
 
-    // Check on-chain conditions (balance and allowance)
+    // 8. Cryptographic signature verification via is_valid_signature
+    const nodeUrl = process.env.STARKNET_NODE_URL
+      || process.env.NEXT_PUBLIC_STARKNET_NODE_URL;
+    if (!nodeUrl) return fail('unexpected_verify_error: no RPC URL configured', inner.from);
+
+    const provider = new RpcProvider({ nodeUrl });
+
     try {
-      const nodeUrl = process.env.STARKNET_NODE_URL || process.env.NEXT_PUBLIC_STARKNET_NODE_URL || 'https://starknet-sepolia.public.blastapi.io';
-      const facilitatorAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
+      const td = buildPaymentTypedData(inner, network);
+      const messageHash = typedData.getMessageHash(td, inner.from);
 
-      console.log('  Node URL:', nodeUrl ? '✅' : '❌');
-      console.log('  Facilitator Address:', facilitatorAddress ? '✅' : '❌');
-
-      if (!facilitatorAddress) {
-        console.warn('[Facilitator /verify] ❌ Missing NEXT_PUBLIC_FACILITATOR_ADDRESS, skipping on-chain checks');
-        console.warn('[Facilitator /verify] ⚠️  This means balance and allowance will NOT be verified!');
-      } else {
-        const provider = new RpcProvider({ nodeUrl });
-
-        // Check user's token balance
-        const balanceResult = await provider.callContract({
-          contractAddress: paymentPayload.payload.token,
-          entrypoint: 'balanceOf',
-          calldata: [paymentPayload.payload.from],
-        });
-
-        const balance = num.toBigInt(balanceResult[0]);
-
-        if (balance < paymentAmount) {
-          return NextResponse.json({
-            isValid: false,
-            invalidReason: `Insufficient balance: has ${balance}, needs ${paymentAmount}`,
-          });
-        }
-
-        // Check allowance for facilitator
-        const allowanceResult = await provider.callContract({
-          contractAddress: paymentPayload.payload.token,
-          entrypoint: 'allowance',
-          calldata: [paymentPayload.payload.from, facilitatorAddress],
-        });
-
-        const allowance = num.toBigInt(allowanceResult[0]);
-
-        if (allowance < paymentAmount) {
-          return NextResponse.json({
-            isValid: false,
-            invalidReason: `Insufficient allowance: approved ${allowance}, needs ${paymentAmount}. Please approve the facilitator first.`,
-          });
-        }
-
-      }
-    } catch (onChainError) {
-      console.error('[Facilitator /verify] On-chain verification failed:', onChainError);
-      return NextResponse.json({
-        isValid: false,
-        invalidReason: `On-chain verification failed: ${onChainError instanceof Error ? onChainError.message : 'Unknown error'}`,
+      const sigResult = await provider.callContract({
+        contractAddress: inner.from,
+        entrypoint: 'is_valid_signature',
+        calldata: CallData.compile({
+          hash: messageHash,
+          signature: [inner.signature.r, inner.signature.s],
+        }),
       });
+
+      const VALID = '0x56414c4944';
+      const isValid = sigResult[0] === VALID || BigInt(sigResult[0]) === BigInt(VALID);
+      if (!isValid) {
+        return fail('invalid_signature: verification failed', inner.from);
+      }
+    } catch (sigError) {
+      console.error('[Facilitator /verify] Signature verification error:', sigError instanceof Error ? sigError.message : sigError);
+      return fail('invalid_signature: on-chain verification failed', inner.from);
     }
 
-    // All validations passed
-    return NextResponse.json({
-      isValid: true,
-      invalidReason: null,
-    });
+    // 9. On-chain balance & allowance
+    const facilitatorAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
+    if (!facilitatorAddress) {
+      console.warn('[Facilitator /verify] No FACILITATOR_ADDRESS — skipping balance/allowance checks');
+    } else {
+      try {
+        const balanceResult = await provider.callContract({
+          contractAddress: inner.token,
+          entrypoint: 'balanceOf',
+          calldata: [inner.from],
+        });
+        const balance = parseU256(balanceResult);
+        if (balance < paymentAmount) {
+          return fail(`insufficient_funds: balance ${balance}, need ${paymentAmount}`, inner.from);
+        }
+
+        const allowanceResult = await provider.callContract({
+          contractAddress: inner.token,
+          entrypoint: 'allowance',
+          calldata: [inner.from, facilitatorAddress],
+        });
+        const allowance = parseU256(allowanceResult);
+        if (allowance < paymentAmount) {
+          return fail(`insufficient_funds: allowance ${allowance}, need ${paymentAmount}. Approve the facilitator first.`, inner.from);
+        }
+      } catch (onChainError) {
+        console.error('[Facilitator /verify] On-chain check failed:', onChainError instanceof Error ? onChainError.message : onChainError);
+        return fail('unexpected_verify_error: on-chain checks failed', inner.from);
+      }
+    }
+
+    return NextResponse.json({ isValid: true, invalidReason: null, payer: inner.from } satisfies VerifyResponse);
   } catch (error) {
-    console.error('Verification error:', error);
+    console.error('[Facilitator /verify] Unexpected error:', error);
     return NextResponse.json(
-      {
-        isValid: false,
-        invalidReason: 'Internal server error during verification',
-      },
-      { status: 500 }
+      { isValid: false, invalidReason: 'unexpected_verify_error', payer: undefined } satisfies VerifyResponse,
+      { status: 500 },
     );
   }
 }
-

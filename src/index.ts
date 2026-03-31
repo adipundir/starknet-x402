@@ -1,95 +1,50 @@
 /**
- * x402 for Starknet - Main Export File
- * 
- * Import this package to use x402 payment protocol on Starknet
+ * x402 v2 for Starknet
  */
 
-// ============================================================================
-// Type Exports
-// ============================================================================
-
+// Types & constants
 export {
-  // Core types
-  PaymentRequiredResponse,
-  PaymentRequirements,
-  PaymentPayload,
-  StarknetExactPayload,
-  
-  // Facilitator types
-  VerifyRequest,
-  VerifyResponse,
-  SettleRequest,
-  SettleResponse,
-  SupportedResponse,
-  SupportedKind,
-  
-  // Configuration types
-  FacilitatorConfig,
-  PaymentMiddlewareConfig,
-  
-  // Error types
+  type ResourceInfo,
+  type PaymentRequiredResponse,
+  type PaymentRequirements,
+  type PaymentPayload,
+  type StarknetExactPayload,
+  type VerifyRequest,
+  type VerifyResponse,
+  type SettleRequest,
+  type SettleResponse,
+  type SettlementResponseHeader,
+  type SupportedResponse,
+  type SupportedKind,
+  type FacilitatorConfig,
+  type FacilitatorUrlConfig,
+  type RouteConfig,
   X402Error,
   VerificationError,
   SettlementError,
-  
-  // Constants
   X402_VERSION,
-  X_PAYMENT_HEADER,
-  X_PAYMENT_RESPONSE_HEADER,
+  PAYMENT_SIGNATURE_HEADER,
+  PAYMENT_RESPONSE_HEADER,
+  PAYMENT_REQUIRED_HEADER,
   SCHEMES,
   NETWORKS,
+  TOKENS,
+  STARKNET_SCHEME,
+  STARKNET_SEPOLIA,
+  STARKNET_MAINNET,
+  getRequiredAmount,
+  buildSettleResponse,
+  getPaymentHeader,
+  decodePaymentHeader,
+  validatePaymentPayload,
+  encodeSettlementResponseHeader,
+  isValidStarknetAddress,
+  parseU256,
 } from './types/x402';
 
-// ============================================================================
-// Facilitator Exports
-// ============================================================================
+export { buildPaymentTypedData, getChainId } from './types/typed-data';
 
-export {
-  FacilitatorServer,
-  createFacilitatorServer,
-} from './facilitator/server';
-
+// Facilitator internals (used by API routes)
 export { StarknetVerifier } from './facilitator/starknet-verifier';
-export { StarknetSettler, PAYMENT_PROCESSOR_ABI } from './facilitator/starknet-settler';
-
-// ============================================================================
-// Middleware Exports
-// ============================================================================
-
-export {
-  paymentMiddleware,
-  localPaymentMiddleware,
-} from './middleware/payment-middleware';
-
-// ============================================================================
-// Client Exports
-// ============================================================================
-
-export {
-  PaymentClient,
-  createPaymentClient,
-  payForResource,
-  PaymentClientConfig,
-  PaymentResult,
-} from './client/payment-client';
-
-// ============================================================================
-// Default Export
-// ============================================================================
-
-export default {
-  // Facilitator
-  createFacilitatorServer,
-  
-  // Middleware
-  paymentMiddleware,
-  localPaymentMiddleware,
-  
-  // Client
-  createPaymentClient,
-  payForResource,
-};
-
-
-
-
+export { StarknetSettler } from './facilitator/starknet-settler';
+export { isNonceFresh, markNonceUsed, reserveNonce } from './facilitator/nonce-tracker';

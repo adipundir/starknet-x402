@@ -34,6 +34,7 @@
   "author": "Aditya Pundir",
   "license": "MIT",
   "peerDependencies": {
+    "axios": "^1.0.0",
     "next": "^15.0.0",
     "starknet": "^7.0.0"
   },

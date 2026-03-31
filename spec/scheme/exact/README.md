@@ -1,93 +1,46 @@
-# x402 Protocol Specification for Starknet
+# x402 Protocol Specification for Starknet (v2)
 
-This directory contains the complete x402 payment protocol specification for Starknet implementation.
+This directory contains the x402 payment protocol specification for the Starknet implementation.
 
 ## Documentation
 
-### `scheme_exact_starknet.md` - **Complete Specification**
+### `scheme_exact_starknet.md` - Complete Specification
 
-This is the **single source of truth** for implementing x402 payments on Starknet. It contains:
+The single source of truth for implementing x402 payments on Starknet.
 
-#### Core Protocol
-- ✅ Payment payload structure with examples
-- ✅ Message signing format (Starknet typed data)
-- ✅ 12-step verification process
-- ✅ Complete settlement flow (Approval + TransferFrom)
+## v2 Changes from v1
 
-#### Payment Requirements
-- ✅ 402 response format
-- ✅ Required fields and validation rules
+| Area | v1 | v2 |
+|------|----|----|
+| Payment header | `X-PAYMENT` | `PAYMENT-SIGNATURE` |
+| Response header | `X-Payment-Response` | `PAYMENT-RESPONSE` |
+| 402 header | (none) | `PAYMENT-REQUIRED` |
+| Amount field | `maxAmountRequired` | `amount` |
+| Settle response | `txHash`, `error`, `networkId` | `transaction`, `errorReason`, `network` |
+| Verify response | (no payer) | `payer` field added |
+| Payment payload | (minimal) | `resource`, `accepted`, `extensions` fields |
+| 402 body | (minimal) | `resource: ResourceInfo`, `extensions` added |
+| Protocol version | `x402Version: 1` | `x402Version: 2` |
 
-#### Facilitator API
-- ✅ POST `/api/facilitator/verify` - Verify payment authorization
-- ✅ POST `/api/facilitator/settle` - Execute payment on blockchain
-- ✅ Request/response schemas with examples
-
-#### Implementation Details
-- ✅ Client implementation guide
-- ✅ Facilitator implementation guide
-- ✅ Resource server implementation guide
-- ✅ Code examples for all components
-
-#### Reference Information
-- ✅ Supported networks (Sepolia, Mainnet)
-- ✅ Supported assets (STRK, ETH, USDC with addresses)
-- ✅ Complete error code list
-- ✅ Security considerations
-- ✅ Starknet-specific differences from EVM
-
-## Quick Start
-
-### For Developers
-
-**Building a client?** → Read sections: "X-Payment header payload", "Message Structure", "Client Implementation"
-
-**Building a facilitator?** → Read sections: "Verification", "Settlement", "Facilitator API", "Facilitator Implementation"
-
-**Building a server?** → Read sections: "Payment Requirements Response", "Resource Server Implementation"
-
-## Structure
-
-The specification follows this logical flow:
-
-```
-1. Summary - Overview of the protocol
-   ↓
-2. Payload Structure - What to send in X-PAYMENT header
-   ↓
-3. Message Signing - How to sign payments
-   ↓
-4. Verification - 12 steps to verify a payment
-   ↓
-5. Payment Requirements - 402 response format
-   ↓
-6. Settlement - How facilitator executes payments
-   ↓
-7. Facilitator API - REST endpoints for verification/settlement
-   ↓
-8. Error Codes - Standard error messages
-   ↓
-9. Security - Nonce tracking, deadline enforcement, etc.
-   ↓
-10. Networks & Assets - Supported chains and tokens
-   ↓
-11. Implementation Notes - Guides for each role
-   ↓
-12. Appendix - Why this approach, future improvements
-```
+All v1 fields are kept as deprecated aliases for backward compatibility.
 
 ## Key Features
 
-✅ **Starknet-Native**: Uses Starknet's account abstraction and signature schemes  
-✅ **Gasless for Users**: After one-time approval, payments are gasless  
-✅ **Facilitator-Settled**: Follows x402 principle (facilitator handles blockchain)  
-✅ **Trust-Minimized**: Users control approval amounts  
-✅ **Complete Specification**: Everything needed to build a working implementation  
+- **Starknet-Native**: Uses account abstraction and `is_valid_signature` for verification
+- **USDC Default**: Circle native USDC (6 decimals) as default token
+- **Gas Sponsoring**: AVNU paymaster integration for gasless settlement
+- **Facilitator-Settled**: Facilitator handles `transfer_from` on-chain
+- **Replay Protected**: In-memory nonce tracking
+- **Trust-Minimized**: Users control approval amounts
+
+## Quick Reference
+
+**Client**: Read "PAYMENT-SIGNATURE header payload", "SNIP-12 Typed Data", "Client Implementation"
+
+**Facilitator**: Read "Verification (12 steps)", "Settlement", "Facilitator API"
+
+**Server**: Read "402 Response Format", "Middleware Implementation"
 
 ## Version
 
-**Version 1.0** - October 2025
-
-This specification is production-ready and used by the starknet-x402 reference implementation.
-
-
+**Version 2.0** - March 2026

@@ -1,292 +1,21 @@
 /**
- * x402 Protocol Type Definitions for Starknet
- * 
- * This file contains all type definitions for the x402 payment protocol
- * adapted for Starknet blockchain integration.
+ * x402 v2 Protocol Type Definitions for Starknet
+ *
+ * Single source of truth for all x402 types. v2 only — no v1 compatibility.
  */
 
-// ============================================================================
-// Core Protocol Types
-// ============================================================================
-
-/**
- * Payment Required Response returned by resource server when payment is needed
- */
-export interface PaymentRequiredResponse {
-  /** Version of the x402 payment protocol */
-  x402Version: number;
-  
-  /** List of payment requirements that the resource server accepts */
-  accepts: PaymentRequirements[];
-  
-  /** Optional error message from the resource server */
-  error?: string;
-}
-
-/**
- * Payment Requirements specifying how to pay for a resource
- */
-export interface PaymentRequirements {
-  /** Scheme of the payment protocol (e.g., 'exact', 'upto') */
-  scheme: string;
-  
-  /** Network identifier (e.g., 'starknet-mainnet', 'starknet-sepolia') */
-  network: string;
-  
-  /** Maximum amount required in atomic units (wei for ETH, smallest unit for token) */
-  maxAmountRequired: string;
-  
-  /** URL of resource to pay for */
-  resource: string;
-  
-  /** Human-readable description of the resource */
-  description: string;
-  
-  /** MIME type of the resource response */
-  mimeType: string;
-  
-  /** Optional JSON schema of the resource response */
-  outputSchema?: object | null;
-  
-  /** Starknet address to receive payment */
-  payTo: string;
-  
-  /** Maximum time in seconds for the resource server to respond */
-  maxTimeoutSeconds: number;
-  
-  /** Token contract address (for ERC20-like tokens on Starknet) */
-  asset: string;
-  
-  /** Extra scheme-specific information */
-  extra?: Record<string, any> | null;
-}
-
-/**
- * Payment Payload sent in X-PAYMENT header
- */
-export interface PaymentPayload {
-  /** Version of the x402 payment protocol */
-  x402Version: number;
-  
-  /** Scheme being used for payment */
-  scheme: string;
-  
-  /** Network identifier */
-  network: string;
-  
-  /** Scheme-dependent payload data */
-  payload: any;
-}
-
-// ============================================================================
-// Starknet-Specific Types
-// ============================================================================
-
-/**
- * Starknet Exact Scheme Payload
- * For transferring an exact amount using Starknet signatures
- */
-export interface StarknetExactPayload {
-  /** Sender's Starknet address */
-  from: string;
-  
-  /** Recipient's Starknet address */
-  to: string;
-  
-  /** Amount to transfer in atomic units */
-  amount: string;
-  
-  /** Token contract address */
-  token: string;
-  
-  /** Nonce for replay protection */
-  nonce: string;
-  
-  /** Expiration timestamp (unix timestamp in seconds) */
-  deadline: number;
-  
-  /** Starknet signature components */
-  signature: {
-    r: string;
-    s: string;
-  };
-  
-  /** Optional chain ID for additional security */
-  chainId?: string;
-}
-
-// ============================================================================
-// Facilitator API Types
-// ============================================================================
-
-/**
- * Request to verify a payment
- */
-export interface VerifyRequest {
-  /** Protocol version */
-  x402Version: number;
-  
-  /** Base64 encoded payment header */
-  paymentHeader: string;
-  
-  /** Payment requirements to verify against */
-  paymentRequirements: PaymentRequirements;
-}
-
-/**
- * Response from payment verification
- */
-export interface VerifyResponse {
-  /** Whether the payment is valid */
-  isValid: boolean;
-  
-  /** Reason for invalidity, if applicable */
-  invalidReason: string | null;
-}
-
-/**
- * Request to settle a payment
- */
-export interface SettleRequest {
-  /** Protocol version */
-  x402Version: number;
-  
-  /** Base64 encoded payment header */
-  paymentHeader: string;
-  
-  /** Payment requirements to settle */
-  paymentRequirements: PaymentRequirements;
-}
-
-/**
- * Response from payment settlement
- */
-export interface SettleResponse {
-  /** Whether the payment was successful */
-  success: boolean;
-  
-  /** Error message if settlement failed */
-  error: string | null;
-  
-  /** Transaction hash of the settled payment */
-  txHash: string | null;
-  
-  /** Network ID where payment was settled */
-  networkId: string | null;
-}
-
-/**
- * Supported scheme and network combination
- */
-export interface SupportedKind {
-  /** Payment scheme */
-  scheme: string;
-  
-  /** Network identifier */
-  network: string;
-}
-
-/**
- * Response listing supported payment kinds
- */
-export interface SupportedResponse {
-  /** Array of supported (scheme, network) pairs */
-  kinds: SupportedKind[];
-}
-
-// ============================================================================
-// Configuration Types
-// ============================================================================
-
-/**
- * Facilitator server configuration
- */
-export interface FacilitatorConfig {
-  /** Port to run the server on */
-  port: number;
-  
-  /** Starknet RPC URL */
-  rpcUrl: string;
-  
-  /** Private key for facilitator account (for settlement) */
-  privateKey: string;
-  
-  /** Supported networks */
-  networks: string[];
-  
-  /** Supported schemes */
-  schemes: string[];
-  
-  /** Optional: Maximum gas price in wei */
-  maxGasPrice?: string;
-}
-
-/**
- * Payment middleware configuration
- */
-export interface PaymentMiddlewareConfig {
-  /** Facilitator server URL */
-  facilitatorUrl: string;
-  
-  /** Address to receive payments */
-  payToAddress: string;
-  
-  /** Token contract address */
-  tokenAddress: string;
-  
-  /** Network identifier */
-  network: string;
-  
-  /** Endpoint pricing map */
-  pricing: Record<string, string>;
-  
-  /** Optional timeout in seconds */
-  timeoutSeconds?: number;
-  
-  /** Optional scheme (defaults to 'exact') */
-  scheme?: string;
-}
-
-// ============================================================================
-// Error Types
-// ============================================================================
-
-export class X402Error extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: any
-  ) {
-    super(message);
-    this.name = 'X402Error';
-  }
-}
-
-export class VerificationError extends X402Error {
-  constructor(message: string, details?: any) {
-    super(message, 'VERIFICATION_ERROR', details);
-    this.name = 'VerificationError';
-  }
-}
-
-export class SettlementError extends X402Error {
-  constructor(message: string, details?: any) {
-    super(message, 'SETTLEMENT_ERROR', details);
-    this.name = 'SettlementError';
-  }
-}
-
-// ============================================================================
+// =============================================================================
 // Constants
-// ============================================================================
+// =============================================================================
 
-export const X402_VERSION = 1;
-export const X_PAYMENT_HEADER = 'X-PAYMENT';
-export const X_PAYMENT_RESPONSE_HEADER = 'X-PAYMENT-RESPONSE';
+export const X402_VERSION = 2;
+
+export const PAYMENT_SIGNATURE_HEADER = 'PAYMENT-SIGNATURE';
+export const PAYMENT_RESPONSE_HEADER = 'PAYMENT-RESPONSE';
+export const PAYMENT_REQUIRED_HEADER = 'PAYMENT-REQUIRED';
 
 export const SCHEMES = {
   EXACT: 'exact',
-  UPTO: 'upto', // Future implementation
 } as const;
 
 export const NETWORKS = {
@@ -294,3 +23,258 @@ export const NETWORKS = {
   STARKNET_SEPOLIA: 'starknet-sepolia',
 } as const;
 
+export const TOKENS = {
+  USDC_SEPOLIA: '0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343',
+  USDC_MAINNET: '0x033068F6539f8e6e6b131e6B2B814e6c34A5224bC66947c47DaB9dFeE93b35fb',
+  STRK_SEPOLIA: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
+  ETH: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+} as const;
+
+export const STARKNET_SCHEME = SCHEMES.EXACT;
+export const STARKNET_SEPOLIA = NETWORKS.STARKNET_SEPOLIA;
+export const STARKNET_MAINNET = NETWORKS.STARKNET_MAINNET;
+
+// =============================================================================
+// Core Protocol Types
+// =============================================================================
+
+export interface ResourceInfo {
+  url: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/**
+ * Payment Requirements — what the resource server accepts.
+ * Resource metadata lives in PaymentRequiredResponse.resource, not here.
+ */
+export interface PaymentRequirements {
+  scheme: string;
+  network: string;
+  amount: string;
+  payTo: string;
+  asset: string;
+  maxTimeoutSeconds: number;
+  extra?: Record<string, unknown> | null;
+}
+
+export interface PaymentRequiredResponse {
+  x402Version: number;
+  accepts: PaymentRequirements[];
+  resource?: ResourceInfo;
+  /** Facilitator URL for /verify, /settle, /supported */
+  facilitatorUrl?: string;
+  error?: string;
+  extensions?: Record<string, unknown>;
+}
+
+export interface StarknetExactPayload {
+  from: string;
+  to: string;
+  amount: string;
+  token: string;
+  nonce: string;
+  deadline: number;
+  signature: {
+    r: string;
+    s: string;
+  };
+  chainId?: string;
+}
+
+/**
+ * Payment Payload — sent in the PAYMENT-SIGNATURE header (base64-encoded).
+ * `accepted` echoes the selected PaymentRequirements entry.
+ */
+export interface PaymentPayload {
+  x402Version: number;
+  payload: StarknetExactPayload;
+  accepted: PaymentRequirements;
+  resource?: ResourceInfo;
+  extensions?: Record<string, unknown>;
+}
+
+// =============================================================================
+// Facilitator API Types
+// =============================================================================
+
+export interface VerifyRequest {
+  x402Version: number;
+  paymentHeader: string;
+  paymentRequirements: PaymentRequirements;
+}
+
+export interface VerifyResponse {
+  isValid: boolean;
+  invalidReason: string | null;
+  payer?: string;
+}
+
+export interface SettleRequest {
+  x402Version: number;
+  paymentHeader: string;
+  paymentRequirements: PaymentRequirements;
+}
+
+export interface SettleResponse {
+  success: boolean;
+  transaction: string | null;
+  network: string | null;
+  errorReason: string | null;
+  payer?: string;
+  amount?: string;
+  extensions?: Record<string, unknown>;
+}
+
+export interface SettlementResponseHeader {
+  transaction: string;
+  network: string;
+  payer?: string;
+  amount?: string;
+}
+
+export interface SupportedKind {
+  x402Version: number;
+  scheme: string;
+  network: string;
+  extra?: Record<string, unknown>;
+}
+
+export interface SupportedResponse {
+  kinds: SupportedKind[];
+}
+
+// =============================================================================
+// Configuration Types
+// =============================================================================
+
+export interface RouteConfig {
+  price: string;
+  tokenAddress: string;
+  network?: 'sepolia' | 'mainnet' | string;
+  config?: {
+    description?: string;
+    mimeType?: string;
+    maxTimeoutSeconds?: number;
+  };
+}
+
+export interface FacilitatorUrlConfig {
+  url: string;
+}
+
+export interface FacilitatorConfig {
+  port: number;
+  rpcUrl: string;
+  privateKey: string;
+  facilitatorAddress: string;
+  networks: string[];
+  schemes: string[];
+  maxGasPrice?: string;
+}
+
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+export class X402Error extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'X402Error';
+  }
+}
+
+export class VerificationError extends X402Error {
+  constructor(message: string, details?: unknown) {
+    super(message, 'VERIFICATION_ERROR', details);
+    this.name = 'VerificationError';
+  }
+}
+
+export class SettlementError extends X402Error {
+  constructor(message: string, details?: unknown) {
+    super(message, 'SETTLEMENT_ERROR', details);
+    this.name = 'SettlementError';
+  }
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+export function getRequiredAmount(req: PaymentRequirements): bigint {
+  return BigInt(req.amount);
+}
+
+export function buildSettleResponse(opts: {
+  success: boolean;
+  transaction?: string | null;
+  network?: string | null;
+  errorReason?: string | null;
+  payer?: string;
+  amount?: string;
+}): SettleResponse {
+  return {
+    success: opts.success,
+    transaction: opts.transaction ?? null,
+    network: opts.network ?? null,
+    errorReason: opts.errorReason ?? null,
+    payer: opts.payer,
+    amount: opts.amount,
+  };
+}
+
+export function getPaymentHeader(headers: { get(name: string): string | null }): string | null {
+  return headers.get(PAYMENT_SIGNATURE_HEADER);
+}
+
+export function decodePaymentHeader(header: string): PaymentPayload | null {
+  try {
+    return JSON.parse(Buffer.from(header, 'base64').toString('utf-8')) as PaymentPayload;
+  } catch {
+    return null;
+  }
+}
+
+export function validatePaymentPayload(payload: PaymentPayload | null): payload is PaymentPayload {
+  if (!payload) return false;
+  return !!(
+    payload.x402Version &&
+    payload.accepted?.scheme &&
+    payload.accepted?.network &&
+    payload.payload?.from &&
+    payload.payload?.to &&
+    payload.payload?.token &&
+    payload.payload?.amount &&
+    payload.payload?.nonce &&
+    payload.payload?.signature?.r &&
+    payload.payload?.signature?.s
+  );
+}
+
+export function encodeSettlementResponseHeader(
+  transaction: string,
+  network: string,
+  payer?: string,
+  amount?: string,
+): string {
+  const header: SettlementResponseHeader = { transaction, network, payer, amount };
+  return Buffer.from(JSON.stringify(header)).toString('base64');
+}
+
+export function isValidStarknetAddress(address: string): boolean {
+  if (!address || typeof address !== 'string') return false;
+  const clean = address.startsWith('0x') ? address.slice(2) : address;
+  if (!/^[0-9a-fA-F]+$/.test(clean)) return false;
+  return clean.length > 0 && clean.length <= 64;
+}
+
+export function parseU256(result: string[]): bigint {
+  if (!result || result.length < 2) return 0n;
+  return BigInt(result[0]) + (BigInt(result[1]) << 128n);
+}

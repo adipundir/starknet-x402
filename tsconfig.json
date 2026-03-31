@@ -56,6 +56,9 @@
   },
   "include": [
     "app/**/*",
+    "lib/**/*",
+    "src/types/**/*",
+    "src/facilitator/nonce-tracker.ts",
     "next-env.d.ts",
     ".next/types/**/*.ts"
   ],
@@ -64,8 +67,8 @@
     "dist",
     ".next",
     "examples",
-    "src",
     "scripts",
+    "packages",
     "**/*.spec.ts",
     "**/*.test.ts"
   ]

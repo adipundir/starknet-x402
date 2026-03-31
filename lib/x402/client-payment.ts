@@ -1,10 +1,19 @@
 /**
- * x402 Client Payment Creation for Starknet
- * Implements the exact scheme payload generation and signing
+ * x402 v2 Client Payment Creation for Starknet
+ *
+ * Uses canonical SNIP-12 typed data for hash consistency with the facilitator.
  */
 
-import { Account, RpcProvider, typedData, ec, num } from 'starknet';
-import type { PaymentPayload } from './types';
+import { Account, RpcProvider } from 'starknet';
+import type { PaymentPayload, PaymentRequirements } from './types';
+import { X402_VERSION, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER } from './types';
+import { buildPaymentTypedData } from '../../src/types/typed-data';
+
+function toHexString(val: unknown): string {
+  if (typeof val === 'string') return val;
+  if (typeof val === 'bigint') return '0x' + val.toString(16);
+  return String(val);
+}
 
 export interface PaymentOptions {
   from: string;
@@ -12,240 +21,119 @@ export interface PaymentOptions {
   token: string;
   amount: string;
   network: 'starknet-sepolia' | 'starknet-mainnet';
-  deadline?: number; // Unix timestamp, defaults to now + 5 minutes
+  deadline?: number;
 }
 
 export interface SignedPayment {
   paymentPayload: PaymentPayload;
-  paymentHeader: string; // Base64-encoded JSON
+  paymentHeader: string;
 }
 
-/**
- * Generate a unique nonce for payment
- */
 export function generateNonce(): string {
-  const bytes = new Uint8Array(32);
+  const bytes = new Uint8Array(31);
   crypto.getRandomValues(bytes);
   return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Get chain ID for network
- */
-function getChainId(network: string): string {
-  return network === 'starknet-mainnet' 
-    ? '0x534e5f4d41494e' // SN_MAIN
-    : '0x534e5f5345504f4c4941'; // SN_SEPOLIA
-}
-
-/**
- * Create typed data message for signing
- */
-export function createPaymentMessage(options: PaymentOptions & { nonce: string; deadline: number }) {
-  const chainId = getChainId(options.network);
-
-  return {
-    types: {
-      StarkNetDomain: [
-        { name: 'name', type: 'felt' },
-        { name: 'version', type: 'felt' },
-        { name: 'chainId', type: 'felt' },
-      ],
-      Payment: [
-        { name: 'from', type: 'felt' },
-        { name: 'to', type: 'felt' },
-        { name: 'token', type: 'felt' },
-        { name: 'amount', type: 'felt' },
-        { name: 'nonce', type: 'felt' },
-        { name: 'deadline', type: 'felt' },
-      ],
-    },
-    primaryType: 'Payment',
-    domain: {
-      name: 'x402 Payment',
-      version: '1',
-      chainId: chainId,
-    },
-    message: {
-      from: options.from,
-      to: options.to,
-      token: options.token,
-      amount: options.amount,
-      nonce: options.nonce,
-      deadline: options.deadline,
-    },
-  };
-}
-
-/**
- * Sign a payment using Starknet account
- * @param account - Starknet Account instance
- * @param options - Payment options
- * @returns Signed payment with payload and base64-encoded header
- */
 export async function signPayment(
   account: Account,
-  options: PaymentOptions
+  options: PaymentOptions,
 ): Promise<SignedPayment> {
-  // Generate nonce and deadline
-  const nonce = generateNonce();
-  const deadline = options.deadline || Math.floor(Date.now() / 1000) + 300; // 5 minutes
-
-  // Create typed data message
-  const message = createPaymentMessage({ ...options, nonce, deadline });
-
-  // Get message hash
-  const messageHash = typedData.getMessageHash(message, account.address);
-
-  // Sign the message
-  const signature = await account.signMessage(message);
-
-  // Create payment payload
-  const paymentPayload: PaymentPayload = {
-    x402Version: 1,
-    scheme: 'exact',
-    network: options.network,
-    payload: {
-      from: options.from,
-      to: options.to,
-      token: options.token,
-      amount: options.amount,
-      nonce: nonce,
-      deadline: deadline,
-      signature: {
-        r: signature[0],
-        s: signature[1],
-      },
-    },
-  };
-
-  // Base64-encode the payment payload
-  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
-
-  return {
-    paymentPayload,
-    paymentHeader,
-  };
-}
-
-/**
- * Create a payment using private key (for demo/testing)
- * @param privateKey - Private key hex string
- * @param provider - Starknet RPC provider
- * @param options - Payment options
- * @returns Signed payment with payload and base64-encoded header
- */
-export async function signPaymentWithPrivateKey(
-  privateKey: string,
-  provider: RpcProvider,
-  options: PaymentOptions
-): Promise<SignedPayment> {
-  // Create account from private key
-  const account = new Account(provider, options.from, privateKey);
-
-  // Sign payment
-  return signPayment(account, options);
-}
-
-/**
- * Create a mock signed payment (for testing/demo without real wallet)
- * WARNING: This creates an invalid signature - for testing only!
- */
-export function createMockPayment(options: PaymentOptions): SignedPayment {
   const nonce = generateNonce();
   const deadline = options.deadline || Math.floor(Date.now() / 1000) + 300;
 
+  const innerPayload = {
+    from: options.from,
+    to: options.to,
+    token: options.token,
+    amount: options.amount,
+    nonce,
+    deadline,
+  };
+
+  const message = buildPaymentTypedData(innerPayload, options.network);
+  const signature = await account.signMessage(message);
+
   const paymentPayload: PaymentPayload = {
-    x402Version: 1,
-    scheme: 'exact',
-    network: options.network,
-    payload: {
-      from: options.from,
-      to: options.to,
-      token: options.token,
+    x402Version: X402_VERSION,
+    accepted: {
+      scheme: 'exact',
+      network: options.network,
       amount: options.amount,
-      nonce: nonce,
-      deadline: deadline,
+      asset: options.token,
+      payTo: options.to,
+      maxTimeoutSeconds: 300,
+    },
+    payload: {
+      ...innerPayload,
       signature: {
-        r: '0x' + '1'.repeat(63) + '0',
-        s: '0x' + '2'.repeat(63) + '0',
+        r: toHexString((signature as any).r ?? (signature as any)[0]),
+        s: toHexString((signature as any).s ?? (signature as any)[1]),
       },
     },
   };
 
   const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
-
-  return {
-    paymentPayload,
-    paymentHeader,
-  };
+  return { paymentPayload, paymentHeader };
 }
 
-/**
- * Decode X-PAYMENT-RESPONSE header
- */
+export async function signPaymentWithPrivateKey(
+  privateKey: string,
+  provider: RpcProvider,
+  options: PaymentOptions,
+): Promise<SignedPayment> {
+  return signPayment(new Account(provider, options.from, privateKey), options);
+}
+
 export function decodeSettlementResponse(header: string) {
-  try {
-    const decoded = Buffer.from(header, 'base64').toString('utf8');
-    return JSON.parse(decoded);
-  } catch (error) {
-    console.error('Failed to decode settlement response:', error);
-    return null;
-  }
+  try { return JSON.parse(Buffer.from(header, 'base64').toString('utf8')); }
+  catch { return null; }
 }
 
-/**
- * Make an HTTP request with payment
- */
 export async function requestWithPayment(
   url: string,
   paymentHeader: string,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<Response> {
   return fetch(url, {
     ...options,
     headers: {
       ...options?.headers,
-      'X-PAYMENT': paymentHeader,
+      [PAYMENT_SIGNATURE_HEADER]: paymentHeader,
     },
   });
 }
 
-/**
- * Complete payment flow: request, get 402, pay, get resource
- */
 export async function payAndRequest(
   url: string,
   account: Account,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<Response> {
-  // Step 1: Request without payment
   const initialResponse = await fetch(url, options);
+  if (initialResponse.status !== 402) return initialResponse;
 
-  // If not 402, return response
-  if (initialResponse.status !== 402) {
-    return initialResponse;
+  // Read requirements from PAYMENT-REQUIRED header
+  const prHeader = initialResponse.headers.get(PAYMENT_REQUIRED_HEADER);
+  let requirements: PaymentRequirements;
+
+  if (prHeader) {
+    const decoded = JSON.parse(Buffer.from(prHeader, 'base64').toString('utf8'));
+    requirements = decoded.accepts[0];
+  } else {
+    // Fallback: read from body
+    const body = await initialResponse.json() as { accepts: PaymentRequirements[] };
+    requirements = body.accepts[0];
   }
 
-  // Parse payment requirements
-  const paymentRequired = await initialResponse.json();
-  const requirements = paymentRequired.accepts[0];
+  if (!requirements) throw new Error('No payment requirements provided');
 
-  if (!requirements) {
-    throw new Error('No payment requirements provided');
-  }
-
-  // Step 2: Create and sign payment
   const payment = await signPayment(account, {
     from: account.address,
     to: requirements.payTo,
     token: requirements.asset,
-    amount: requirements.maxAmountRequired,
-    network: requirements.network,
+    amount: requirements.amount,
+    network: requirements.network as 'starknet-sepolia' | 'starknet-mainnet',
   });
 
-  // Step 3: Request with payment
   return requestWithPayment(url, payment.paymentHeader, options);
 }
-
-

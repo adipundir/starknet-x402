@@ -1,11 +1,10 @@
 /**
  * x402 Protocol Utilities
- * Future home of the Starknet x402 SDK
  */
 
 export * from './client';
 export * from './client-payment';
 export * from './facilitator';
-export * from './middleware';
+export { paymentMiddleware } from './middleware';
 export * from './types';
-
+export { createX402Client, X402PaymentError, type X402ClientConfig, type X402AxiosInstance } from './axios';

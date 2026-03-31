@@ -1,168 +1,185 @@
 /**
- * Facilitator Settlement Endpoint
- * Settles payments on Starknet blockchain according to x402 protocol
+ * Facilitator Settlement Endpoint (x402 v2)
+ *
+ * Settles verified payments on Starknet via transfer_from.
+ * Supports AVNU paymaster for gas sponsoring when configured.
+ * Flow: decode → verify → reserve nonce → execute → confirm.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Account, RpcProvider } from 'starknet';
+import { Account, RpcProvider, PaymasterRpc } from 'starknet';
+import {
+  type PaymentRequirements,
+  type SettleResponse,
+  decodePaymentHeader,
+  validatePaymentPayload,
+  buildSettleResponse,
+  NETWORKS,
+} from '../../../../src/types/x402';
+import { reserveNonce } from '../../../../src/facilitator/nonce-tracker';
 
-interface SettleRequest {
-  x402Version: number;
-  paymentHeader: string;
-  paymentRequirements: {
-    scheme: string;
-    network: string;
-    maxAmountRequired: string;
-    payTo: string;
-    asset: string;
-    [key: string]: any;
-  };
-}
-
-interface PaymentPayload {
-  x402Version: number;
-  scheme: string;
-  network: string;
-  payload: {
-    from: string;
-    to: string;
-    token: string;
-    amount: string;
-    nonce: string;
-    deadline: number;
-    signature: {
-      r: string;
-      s: string;
-    };
-  };
+function failSettle(errorReason: string, network: string | null, payer?: string): NextResponse<SettleResponse> {
+  return NextResponse.json(buildSettleResponse({ success: false, errorReason, network, payer }));
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as SettleRequest;
-    const { x402Version, paymentHeader, paymentRequirements } = body;
+    const body = await request.json();
+    const { x402Version, paymentHeader, paymentRequirements } = body as {
+      x402Version: number;
+      paymentHeader: string;
+      paymentRequirements: PaymentRequirements;
+    };
 
-    // Validate request structure
     if (!x402Version || !paymentHeader || !paymentRequirements) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing required fields',
-          txHash: null,
-          networkId: null,
-        },
-        { status: 400 }
+        buildSettleResponse({ success: false, errorReason: 'Missing required fields' }),
+        { status: 400 },
       );
     }
 
-    // Decode payment header
-    let paymentPayload: PaymentPayload;
-    try {
-      const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8');
-      paymentPayload = JSON.parse(decoded);
-    } catch (error) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid payment header encoding',
-        txHash: null,
-        networkId: null,
-      });
+    // Decode
+    const payload = decodePaymentHeader(paymentHeader);
+    if (!validatePaymentPayload(payload)) {
+      return failSettle('Invalid payment header encoding', null);
     }
 
-    // Verify network is supported
-    if (paymentPayload.network !== 'starknet-sepolia') {
-      return NextResponse.json({
-        success: false,
-        error: `Unsupported network: ${paymentPayload.network}`,
-        txHash: null,
-        networkId: null,
-      });
+    const inner = payload.payload;
+    const network = payload.accepted.network;
+
+    // Network validation
+    const supportedNetworks: string[] = [NETWORKS.STARKNET_SEPOLIA, NETWORKS.STARKNET_MAINNET];
+    if (!supportedNetworks.includes(network)) {
+      return failSettle(`Unsupported network: ${network}`, network, inner.from);
     }
 
-      // Get configuration from environment
-      // Try alternative RPC providers for Sepolia
-      const nodeUrl = process.env.STARKNET_NODE_URL || 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo';
-      const privateKey = process.env.FACILITATOR_PRIVATE_KEY;
-      const accountAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
+    // Step 1: Verify first
+    const verifyUrl = new URL('/api/facilitator/verify', request.url);
+    const verifyRes = await fetch(verifyUrl.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x402Version, paymentHeader, paymentRequirements }),
+    });
+    const verification = await verifyRes.json() as { isValid: boolean; invalidReason?: string };
+
+    if (!verification.isValid) {
+      return failSettle(verification.invalidReason || 'Payment verification failed', network, inner.from);
+    }
+
+    // Step 2: Reserve nonce (idempotency / double-spend guard)
+    if (!reserveNonce(inner.nonce)) {
+      return failSettle('invalid_transaction_state: nonce already settled', network, inner.from);
+    }
+
+    // Step 3: Configuration
+    const nodeUrl = process.env.STARKNET_NODE_URL
+      || process.env.NEXT_PUBLIC_STARKNET_NODE_URL
+      || 'https://starknet-sepolia.public.blastapi.io';
+    const privateKey = process.env.FACILITATOR_PRIVATE_KEY;
+    const accountAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
 
     if (!privateKey || !accountAddress) {
-      console.error('[Facilitator] Missing configuration');
-      return NextResponse.json({
-        success: false,
-        error: 'Facilitator not configured. Missing: ' + 
-          (!privateKey ? 'FACILITATOR_PRIVATE_KEY ' : '') + 
+      return failSettle(
+        'Facilitator not configured: ' +
+          (!privateKey ? 'FACILITATOR_PRIVATE_KEY ' : '') +
           (!accountAddress ? 'NEXT_PUBLIC_FACILITATOR_ADDRESS' : ''),
-        txHash: null,
-        networkId: null,
-      });
+        network,
+        inner.from,
+      );
     }
 
-      try {
-        console.log('[Facilitator] Settling payment on-chain...');
-        
-        const provider = new RpcProvider({ nodeUrl });
-        const facilitatorAccount = new Account(provider, accountAddress, privateKey);
+    // Step 4: Execute transfer_from
+    try {
+      const provider = new RpcProvider({ nodeUrl });
+      const facilitatorAccount = new Account(provider, accountAddress, privateKey);
 
+      const calls = [{
+        contractAddress: inner.token,
+        entrypoint: 'transfer_from',
+        calldata: [
+          inner.from,   // sender
+          inner.to,     // recipient
+          inner.amount, // amount low
+          '0',          // amount high (u256)
+        ],
+      }];
+
+      let transaction_hash: string;
+
+      const paymasterUrl = process.env.PAYMASTER_URL;
+      const paymasterApiKey = process.env.PAYMASTER_API_KEY;
+
+      if (paymasterUrl && paymasterApiKey) {
+        // Try AVNU paymaster for gas-sponsored settlement, fall back to standard
         try {
-          const call = {
-            contractAddress: paymentPayload.payload.token,
-            entrypoint: 'transfer_from',
-            calldata: [
-              paymentPayload.payload.from,
-              paymentPayload.payload.to,
-              paymentPayload.payload.amount,
-              '0'
-            ]
-          };
-          
-          // Estimate fee
-          try {
-            const feeEstimate = await facilitatorAccount.estimateInvokeFee(call);
-            const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
-            const maxFee = (suggestedMaxFee * 150n) / 100n;
-            
-            const { transaction_hash } = await facilitatorAccount.execute(call, { maxFee });
-            
-            // Wait for transaction confirmation
-            await provider.waitForTransaction(transaction_hash, {
-              successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1'],
-            });
+          const paymaster = new PaymasterRpc({
+            nodeUrl: paymasterUrl,
+            headers: { 'x-paymaster-api-key': paymasterApiKey },
+          });
 
+          const buildResult = await paymaster.buildTransaction(
+            { type: 'invoke' as const, invoke: { userAddress: accountAddress, calls } },
+            { version: '0x1', feeMode: { mode: 'sponsored' as const } },
+          );
 
-            console.log('[Facilitator] ✅ Settlement successful | Tx:', transaction_hash.slice(0, 10) + '...');
-            
-            return NextResponse.json({
-              success: true,
-              error: null,
-              txHash: transaction_hash,
-              networkId: paymentPayload.network,
-            });
-          } catch (feeError: any) {
-            throw new Error(`Fee estimation failed: ${feeError.message}`);
+          if (buildResult.type !== 'invoke' || !('typed_data' in buildResult)) {
+            throw new Error('Unexpected paymaster build result type');
           }
-        } catch (execError: any) {
-          throw execError;
+          const pmTypedData = (buildResult as any).typed_data;
+          const sig = await facilitatorAccount.signMessage(pmTypedData);
+          const sigR = '0x' + ((sig as any).r ?? (sig as any)[0]).toString(16);
+          const sigS = '0x' + ((sig as any).s ?? (sig as any)[1]).toString(16);
+
+          const execResult = await paymaster.executeTransaction(
+            { type: 'invoke' as const, invoke: { userAddress: accountAddress, typedData: pmTypedData, signature: [sigR, sigS] } },
+            { version: '0x1', feeMode: { mode: 'sponsored' as const } },
+          );
+
+          transaction_hash = (execResult as any).transaction_hash;
+          console.log(`[Facilitator /settle] Paymaster-sponsored settlement | Tx: ${transaction_hash.slice(0, 16)}...`);
+        } catch (pmError) {
+          console.warn('[Facilitator /settle] Paymaster failed, falling back to standard:', pmError instanceof Error ? pmError.message.slice(0, 120) : pmError);
+          // Fall through to standard execution below
+          const feeEstimate = await facilitatorAccount.estimateInvokeFee(calls[0]);
+          const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
+          const maxFee = (suggestedMaxFee * 150n) / 100n;
+          const result = await facilitatorAccount.execute(calls[0], { maxFee });
+          transaction_hash = result.transaction_hash;
+          console.log(`[Facilitator /settle] Standard settlement (fallback) | Tx: ${transaction_hash.slice(0, 16)}...`);
         }
-      } catch (error: any) {
-        console.error('[Facilitator] Settlement failed:', error.message);
-        return NextResponse.json({
-          success: false,
-          error: error.message || 'Transaction execution failed',
-          txHash: null,
-          networkId: paymentPayload.network,
-        });
+      } else {
+        // Standard execution — facilitator pays gas
+        const feeEstimate = await facilitatorAccount.estimateInvokeFee(calls[0]);
+        const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
+        const maxFee = (suggestedMaxFee * 150n) / 100n;
+
+        const result = await facilitatorAccount.execute(calls[0], { maxFee });
+        transaction_hash = result.transaction_hash;
+        console.log(`[Facilitator /settle] Standard settlement | Tx: ${transaction_hash.slice(0, 16)}...`);
       }
+
+      // Wait for on-chain confirmation
+      await provider.waitForTransaction(transaction_hash, {
+        successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1'],
+      });
+
+      return NextResponse.json(buildSettleResponse({
+        success: true,
+        transaction: transaction_hash,
+        network,
+        payer: inner.from,
+        amount: inner.amount,
+      }));
+    } catch (execError) {
+      const message = execError instanceof Error ? execError.message : 'Transaction execution failed';
+      console.error('[Facilitator /settle] Settlement failed:', message);
+      return failSettle(message, network, inner.from);
+    }
   } catch (error) {
-    console.error('Settlement error:', error);
+    console.error('[Facilitator /settle] Unexpected error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Internal server error during settlement',
-        txHash: null,
-        networkId: null,
-      },
-      { status: 500 }
+      buildSettleResponse({ success: false, errorReason: 'unexpected_settle_error' }),
+      { status: 500 },
     );
   }
 }
-
