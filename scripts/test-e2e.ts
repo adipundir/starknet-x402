@@ -13,7 +13,7 @@ dotenv.config();
 
 import { Account, RpcProvider } from 'starknet';
 import { signPayment } from '../lib/x402/client-payment';
-import { createX402Client } from '../lib/x402/axios';
+import { x402axios } from '../lib/x402/axios';
 import type { PaymentRequirements, PaymentRequiredResponse, SupportedResponse } from '../lib/x402/types';
 import { PAYMENT_REQUIRED_HEADER } from '../lib/x402/types';
 

@@ -12,7 +12,7 @@ export { buildPaymentTypedData, getChainId } from './types/typed-data';
 // Client
 export * from './client/client';
 export * from './client/client-payment';
-export { createX402Client, X402PaymentError, type X402ClientConfig, type X402AxiosInstance } from './client/axios';
+export { x402axios, X402PaymentError, type X402RequestConfig, type X402Response } from './client/axios';
 
 // Middleware
 export { paymentMiddleware } from './middleware/middleware';

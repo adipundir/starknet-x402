@@ -1,23 +1,17 @@
 /**
- * x402 Axios Wrapper
- *
- * Drop-in axios replacement that handles x402 payments automatically.
- * On 402: reads PAYMENT-REQUIRED → signs payment → retries with PAYMENT-SIGNATURE.
- *
- * Discovers sponsorship from the facilitator's /supported endpoint
- * (URL provided in the 402 response).
+ * x402 Axios Wrapper (SNIP-9 Outside Execution)
  *
  * Usage:
- *   const client = createX402Client(account, { network: 'starknet-sepolia' });
- *   const { data } = await client.get('/api/protected/weather');
+ *   import { x402axios } from 'starknet-x402';
+ *
+ *   const result = await x402axios.get('https://api.example.com/data', {
+ *     account,
+ *     network: 'starknet-sepolia',
+ *   });
+ *   console.log(result.data);
  */
 
-import axios, {
-  type AxiosInstance,
-  type AxiosRequestConfig,
-  type AxiosResponse,
-  type InternalAxiosRequestConfig,
-} from 'axios';
+import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import { Account } from 'starknet';
 import type { PaymentRequirements, PaymentRequiredResponse } from '../types/types';
 import {
@@ -27,14 +21,15 @@ import {
 } from '../types/types';
 import { signPayment } from './client-payment';
 
-export interface X402ClientConfig {
+export interface X402RequestConfig extends AxiosRequestConfig {
+  account: Account;
   network: 'starknet-sepolia' | 'starknet-mainnet';
-  onPaymentRequired?: (requirements: PaymentRequirements) => boolean | Promise<boolean>;
-  onPaymentSettled?: (transaction: string, network: string) => void;
+  paymasterUrl?: string;
+  paymasterApiKey?: string;
 }
 
-export interface X402AxiosInstance extends AxiosInstance {
-  lastSettlement?: {
+export interface X402Response<T = any> extends AxiosResponse<T> {
+  settlement?: {
     transaction: string;
     network: string;
     payer?: string;
@@ -42,75 +37,64 @@ export interface X402AxiosInstance extends AxiosInstance {
   };
 }
 
-export function createX402Client(
-  account: Account,
-  config: X402ClientConfig,
-  axiosConfig?: AxiosRequestConfig,
-): X402AxiosInstance {
-  const client = axios.create({
+async function request<T = any>(method: string, url: string, config: X402RequestConfig): Promise<X402Response<T>> {
+  const { account, network, paymasterUrl, paymasterApiKey, ...axiosConfig } = config;
+
+  const res = await axios({
     ...axiosConfig,
+    method,
+    url,
     validateStatus: (status) => (status >= 200 && status < 300) || status === 402,
-  }) as X402AxiosInstance;
-
-  client.interceptors.response.use(async (response: AxiosResponse) => {
-    if (response.status !== 402) {
-      readSettlement(client, response, config);
-      return response;
-    }
-
-    const requirements = extractPaymentRequired(response);
-    if (!requirements) return Promise.reject(new X402PaymentError('No payment requirements in 402 response', response));
-
-    if (config.onPaymentRequired) {
-      const approved = await config.onPaymentRequired(requirements);
-      if (!approved) return Promise.reject(new X402PaymentError('Payment rejected by callback', response));
-    }
-
-    const { paymentHeader } = await signPayment(account, {
-      from: account.address,
-      to: requirements.payTo,
-      token: requirements.asset,
-      amount: requirements.amount,
-      network: config.network,
-    });
-
-    const retryConfig: InternalAxiosRequestConfig = {
-      ...response.config,
-      headers: response.config.headers,
-      validateStatus: (status) => status >= 200 && status < 300,
-    };
-    retryConfig.headers.set(PAYMENT_SIGNATURE_HEADER, paymentHeader);
-
-    const paidResponse = await axios.request(retryConfig);
-    readSettlement(client, paidResponse, config);
-    return paidResponse;
   });
 
-  return client;
+  if (res.status !== 402) {
+    return { ...res, settlement: parseSettlement(res) };
+  }
+
+  const requirements = extractPaymentRequired(res);
+  if (!requirements) {
+    throw new X402PaymentError('No payment requirements in 402 response', res);
+  }
+
+  const { paymentHeader } = await signPayment(account, {
+    from: account.address,
+    to: requirements.payTo,
+    token: requirements.asset,
+    amount: requirements.amount,
+    network,
+    paymasterUrl,
+    paymasterApiKey,
+  });
+
+  const paidRes = await axios({
+    ...axiosConfig,
+    method,
+    url,
+    headers: { ...axiosConfig.headers, [PAYMENT_SIGNATURE_HEADER]: paymentHeader },
+  });
+
+  return { ...paidRes, settlement: parseSettlement(paidRes) };
 }
 
-function readSettlement(client: X402AxiosInstance, response: AxiosResponse, config: X402ClientConfig): void {
-  const header = response.headers[PAYMENT_RESPONSE_HEADER.toLowerCase()];
-  if (!header) return;
+function parseSettlement(res: AxiosResponse): X402Response['settlement'] {
+  const header = res.headers[PAYMENT_RESPONSE_HEADER.toLowerCase()];
+  if (!header) return undefined;
   try {
-    client.lastSettlement = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
-    if (client.lastSettlement && config.onPaymentSettled) {
-      config.onPaymentSettled(client.lastSettlement.transaction, client.lastSettlement.network);
-    }
-  } catch (err) {
-    console.error('[x402] Failed to parse PAYMENT-RESPONSE header:', err);
+    return JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+  } catch {
+    return undefined;
   }
 }
 
-function extractPaymentRequired(response: AxiosResponse): PaymentRequirements | null {
-  const header = response.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
+function extractPaymentRequired(res: AxiosResponse): PaymentRequirements | null {
+  const header = res.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
   if (header) {
     try {
       const decoded: PaymentRequiredResponse = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
       if (decoded.accepts?.[0]) return decoded.accepts[0];
-    } catch { /* fall through to body */ }
+    } catch { /* fall through */ }
   }
-  const body = response.data as PaymentRequiredResponse | undefined;
+  const body = res.data as PaymentRequiredResponse | undefined;
   return body?.accepts?.[0] ?? null;
 }
 
@@ -120,3 +104,11 @@ export class X402PaymentError extends Error {
     this.name = 'X402PaymentError';
   }
 }
+
+export const x402axios = {
+  get: <T = any>(url: string, config: X402RequestConfig) => request<T>('GET', url, config),
+  post: <T = any>(url: string, config: X402RequestConfig) => request<T>('POST', url, config),
+  put: <T = any>(url: string, config: X402RequestConfig) => request<T>('PUT', url, config),
+  delete: <T = any>(url: string, config: X402RequestConfig) => request<T>('DELETE', url, config),
+  patch: <T = any>(url: string, config: X402RequestConfig) => request<T>('PATCH', url, config),
+};

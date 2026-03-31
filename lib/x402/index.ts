@@ -7,4 +7,4 @@ export * from './client-payment';
 export * from './facilitator';
 export { paymentMiddleware } from './middleware';
 export * from './types';
-export { createX402Client, X402PaymentError, type X402ClientConfig, type X402AxiosInstance } from './axios';
+export { x402axios, X402PaymentError, type X402RequestConfig, type X402Response } from './axios';
