@@ -1,13 +1,13 @@
 /**
- * x402 Starknet SDK (v2)
- * HTTP-native micropayments for Starknet
+ * starknet-x402 SDK (v2)
+ * Trustless HTTP-native payments for Starknet via SNIP-9
  */
 
 // Types
 export * from './types/types';
 
-// Typed Data
-export { buildPaymentTypedData, getChainId } from './types/typed-data';
+// Transfer call builder
+export { buildTransferCall, ANY_CALLER } from './types/typed-data';
 
 // Client
 export * from './client/client';

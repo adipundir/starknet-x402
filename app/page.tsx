@@ -20,7 +20,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="relative max-w-5xl mx-auto px-6 pt-28 pb-24 text-center">
-          <p className="text-xs text-zinc-500 mb-4 tracking-widest uppercase">x402 protocol on Starknet</p>
+          <p className="text-xs text-zinc-500 mb-4 tracking-widest uppercase">x402v2 protocol on Starknet</p>
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
             Pay for APIs with<br />Circle's USDC on Starknet.
           </h1>

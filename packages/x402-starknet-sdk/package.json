@@ -1,7 +1,7 @@
 {
-  "name": "@adipundir/starknet-x402",
-  "version": "0.1.0",
-  "description": "x402 payment protocol SDK for Starknet - HTTP-native micropayments",
+  "name": "starknet-x402",
+  "version": "1.0.0",
+  "description": "x402 v2 payment protocol for Starknet — trustless HTTP-native payments via SNIP-9",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -18,18 +18,15 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "lint": "tslint 'src/**/*.ts'",
     "clean": "rm -rf dist"
   },
   "keywords": [
     "x402",
     "starknet",
     "payments",
+    "snip-9",
     "micropayments",
-    "http",
-    "blockchain",
-    "crypto"
+    "usdc"
   ],
   "author": "Aditya Pundir",
   "license": "MIT",

@@ -109,7 +109,7 @@ export default function DemoPage() {
       <div className="max-w-5xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="mb-10">
-          <h1 className="text-2xl font-bold mb-2">x402 payment demo</h1>
+          <h1 className="text-2xl font-bold mb-2">x402v2 payment demo</h1>
           <p className="text-sm text-zinc-500">
             This demo calls a protected weather API. The middleware returns 402, the client signs a USDC transfer via AVNU paymaster (SNIP-9), and the facilitator settles it on-chain. No approval needed. Gas is sponsored.
           </p>
@@ -146,7 +146,7 @@ export default function DemoPage() {
             {state.phase === 'idle' && !state.error && (
               <div className="flex flex-col items-center justify-center h-48 text-center">
                 <p className="text-zinc-600 text-sm mb-1">No request sent yet.</p>
-                <p className="text-zinc-700 text-xs">Click "send request" to start the x402 payment flow.</p>
+                <p className="text-zinc-700 text-xs">Click "send request" to start the x402v2 payment flow.</p>
               </div>
             )}
 

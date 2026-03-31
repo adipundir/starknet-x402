@@ -13,11 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "x402 for Starknet — Trustless HTTP-Native Payments",
+  title: "x402v2 for Starknet — Trustless HTTP-Native Payments",
   description: "Accept micropayments in one line of code. No approvals. No gas for users. SNIP-9 Outside Execution on Starknet.",
   keywords: ["x402", "starknet", "payments", "snip-9", "micropayments", "usdc", "web3"],
   openGraph: {
-    title: "x402 for Starknet",
+    title: "x402v2 for Starknet",
     description: "Trustless HTTP-native payments via SNIP-9 Outside Execution.",
     type: "website",
   },

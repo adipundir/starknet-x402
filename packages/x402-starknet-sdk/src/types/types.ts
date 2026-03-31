@@ -69,10 +69,10 @@ export interface StarknetExactPayload {
   to: string;
   amount: string;
   token: string;
-  nonce: string;
-  deadline: number;
-  signature: { r: string; s: string };
-  chainId?: string;
+  outsideExecution: {
+    typedData: any;
+    signature: string[];
+  };
 }
 
 export interface PaymentPayload {
@@ -129,9 +129,8 @@ export function validatePaymentPayload(payload: PaymentPayload | null): payload 
     payload.payload?.to &&
     payload.payload?.token &&
     payload.payload?.amount &&
-    payload.payload?.nonce &&
-    payload.payload?.signature?.r &&
-    payload.payload?.signature?.s
+    payload.payload?.outsideExecution?.typedData &&
+    payload.payload?.outsideExecution?.signature?.length >= 2
   );
 }
 
