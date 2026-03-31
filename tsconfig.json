@@ -1,64 +1,34 @@
 {
   "compilerOptions": {
-    /* Language and Environment */
     "target": "ES2020",
-    "lib": [
-      "ES2020"
-    ],
+    "lib": ["ES2020"],
     "jsx": "preserve",
-    /* Modules */
     "module": "commonjs",
     "rootDir": "./",
     "moduleResolution": "node",
     "baseUrl": "./",
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    },
     "resolveJsonModule": true,
-    /* Emit */
     "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "removeComments": true,
-    "importHelpers": true,
-    /* Interop Constraints */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    /* Type Checking */
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "alwaysStrict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    /* Completeness */
     "skipLibCheck": true,
-    /* Next.js specific */
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "plugins": [{ "name": "next" }],
     "allowJs": true,
     "noEmit": true
   },
   "include": [
     "app/**/*",
     "lib/**/*",
-    "src/types/**/*",
-    "src/facilitator/nonce-tracker.ts",
+    "src/**/*",
     "next-env.d.ts",
     ".next/types/**/*.ts"
   ],
@@ -66,7 +36,6 @@
     "node_modules",
     "dist",
     ".next",
-    "examples",
     "scripts",
     "packages",
     "**/*.spec.ts",

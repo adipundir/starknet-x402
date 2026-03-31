@@ -53,3 +53,6 @@ build-output.log
 # SDK package files
 packages/**/node_modules
 packages/**/dist
+
+# Starknet local accounts
+.starknet-accounts/

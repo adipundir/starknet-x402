@@ -61,30 +61,37 @@ export interface PaymentRequirements {
 export interface PaymentRequiredResponse {
   x402Version: number;
   accepts: PaymentRequirements[];
-  resource?: ResourceInfo;
-  /** Facilitator URL for /verify, /settle, /supported */
-  facilitatorUrl?: string;
+  resource: ResourceInfo;
   error?: string;
   extensions?: Record<string, unknown>;
 }
 
+/**
+ * Starknet exact-scheme payload using SNIP-9 Outside Execution.
+ *
+ * The client signs an OutsideExecution containing a token.transfer() call.
+ * The facilitator submits it via execute_from_outside_v2 on the client's account.
+ * No ERC-20 approval is needed.
+ */
 export interface StarknetExactPayload {
+  /** Client's account address (the one executing the transfer) */
   from: string;
+  /** Recipient address */
   to: string;
+  /** Transfer amount in token's smallest unit */
   amount: string;
+  /** Token contract address */
   token: string;
-  nonce: string;
-  deadline: number;
-  signature: {
-    r: string;
-    s: string;
+  /** OutsideExecution typed data (as returned by AVNU paymaster.buildTransaction) */
+  outsideExecution: {
+    typedData: any;
+    /** Signature over the typed data [r, s] */
+    signature: string[];
   };
-  chainId?: string;
 }
 
 /**
  * Payment Payload — sent in the PAYMENT-SIGNATURE header (base64-encoded).
- * `accepted` echoes the selected PaymentRequirements entry.
  */
 export interface PaymentPayload {
   x402Version: number;
@@ -164,13 +171,12 @@ export interface FacilitatorUrlConfig {
 }
 
 export interface FacilitatorConfig {
-  port: number;
   rpcUrl: string;
-  privateKey: string;
-  facilitatorAddress: string;
+  paymasterUrl: string;
+  paymasterApiKey: string;
   networks: string[];
   schemes: string[];
-  maxGasPrice?: string;
+  port?: number;
 }
 
 
@@ -251,9 +257,8 @@ export function validatePaymentPayload(payload: PaymentPayload | null): payload 
     payload.payload?.to &&
     payload.payload?.token &&
     payload.payload?.amount &&
-    payload.payload?.nonce &&
-    payload.payload?.signature?.r &&
-    payload.payload?.signature?.s
+    payload.payload?.outsideExecution?.typedData &&
+    payload.payload?.outsideExecution?.signature?.length >= 2
   );
 }
 

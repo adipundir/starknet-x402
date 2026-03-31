@@ -1,19 +1,15 @@
 /**
  * x402 v2 Client Payment Creation for Starknet
  *
- * Uses canonical SNIP-12 typed data for hash consistency with the facilitator.
+ * Uses SNIP-9 Outside Execution via AVNU paymaster.
+ * The client signs an OutsideExecution containing token.transfer().
+ * No ERC-20 approval is needed.
  */
 
-import { Account, RpcProvider } from 'starknet';
+import { Account, RpcProvider, PaymasterRpc, num } from 'starknet';
 import type { PaymentPayload, PaymentRequirements } from './types';
 import { X402_VERSION, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER } from './types';
-import { buildPaymentTypedData } from '../../src/types/typed-data';
-
-function toHexString(val: unknown): string {
-  if (typeof val === 'string') return val;
-  if (typeof val === 'bigint') return '0x' + val.toString(16);
-  return String(val);
-}
+import { buildTransferCall } from '../../src/types/typed-data';
 
 export interface PaymentOptions {
   from: string;
@@ -21,7 +17,8 @@ export interface PaymentOptions {
   token: string;
   amount: string;
   network: 'starknet-sepolia' | 'starknet-mainnet';
-  deadline?: number;
+  paymasterUrl?: string;
+  paymasterApiKey?: string;
 }
 
 export interface SignedPayment {
@@ -29,31 +26,64 @@ export interface SignedPayment {
   paymentHeader: string;
 }
 
-export function generateNonce(): string {
-  const bytes = new Uint8Array(31);
-  crypto.getRandomValues(bytes);
-  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+const DEFAULT_PAYMASTER: Record<string, string> = {
+  'starknet-sepolia': 'https://sepolia.paymaster.avnu.fi',
+  'starknet-mainnet': 'https://starknet.paymaster.avnu.fi',
+};
 
+/**
+ * Sign a payment using SNIP-9 Outside Execution.
+ *
+ * Flow:
+ * 1. Build ERC-20 transfer call
+ * 2. Send to AVNU paymaster.buildTransaction() → get OutsideExecution typed data
+ * 3. Client signs the typed data
+ * 4. Package into PaymentPayload
+ */
 export async function signPayment(
   account: Account,
   options: PaymentOptions,
 ): Promise<SignedPayment> {
-  const nonce = generateNonce();
-  const deadline = options.deadline || Math.floor(Date.now() / 1000) + 300;
+  // 1. Build the transfer call
+  const transferCall = buildTransferCall(options.token, options.to, options.amount);
 
-  const innerPayload = {
-    from: options.from,
-    to: options.to,
-    token: options.token,
-    amount: options.amount,
-    nonce,
-    deadline,
-  };
+  // 2. Get OutsideExecution typed data from AVNU paymaster
+  const paymasterUrl = options.paymasterUrl || DEFAULT_PAYMASTER[options.network];
+  if (!paymasterUrl) throw new Error(`No paymaster URL for network ${options.network}`);
 
-  const message = buildPaymentTypedData(innerPayload, options.network);
-  const signature = await account.signMessage(message);
+  const headers: Record<string, string> = {};
+  if (options.paymasterApiKey) {
+    headers['x-paymaster-api-key'] = options.paymasterApiKey;
+  }
 
+  const paymaster = new PaymasterRpc({ nodeUrl: paymasterUrl, headers });
+
+  const buildResult = await paymaster.buildTransaction(
+    {
+      type: 'invoke' as const,
+      invoke: {
+        userAddress: options.from,
+        calls: [transferCall],
+      },
+    },
+    {
+      version: '0x1',
+      feeMode: { mode: 'sponsored' as const },
+    },
+  );
+
+  if (!('typed_data' in buildResult)) {
+    throw new Error('Paymaster did not return typed_data');
+  }
+
+  const typedData = (buildResult as any).typed_data;
+
+  // 3. Client signs the OutsideExecution typed data
+  const signature = await account.signMessage(typedData);
+  const sigR = num.toHex((signature as any).r ?? (signature as any)[0]);
+  const sigS = num.toHex((signature as any).s ?? (signature as any)[1]);
+
+  // 4. Package into PaymentPayload
   const paymentPayload: PaymentPayload = {
     x402Version: X402_VERSION,
     accepted: {
@@ -65,10 +95,13 @@ export async function signPayment(
       maxTimeoutSeconds: 300,
     },
     payload: {
-      ...innerPayload,
-      signature: {
-        r: toHexString((signature as any).r ?? (signature as any)[0]),
-        s: toHexString((signature as any).s ?? (signature as any)[1]),
+      from: options.from,
+      to: options.to,
+      token: options.token,
+      amount: options.amount,
+      outsideExecution: {
+        typedData,
+        signature: [sigR, sigS],
       },
     },
   };
@@ -77,6 +110,9 @@ export async function signPayment(
   return { paymentPayload, paymentHeader };
 }
 
+/**
+ * Sign a payment using a raw private key.
+ */
 export async function signPaymentWithPrivateKey(
   privateKey: string,
   provider: RpcProvider,
@@ -85,11 +121,17 @@ export async function signPaymentWithPrivateKey(
   return signPayment(new Account(provider, options.from, privateKey), options);
 }
 
+/**
+ * Decode a PAYMENT-RESPONSE header.
+ */
 export function decodeSettlementResponse(header: string) {
   try { return JSON.parse(Buffer.from(header, 'base64').toString('utf8')); }
   catch { return null; }
 }
 
+/**
+ * Make an HTTP request with the PAYMENT-SIGNATURE header.
+ */
 export async function requestWithPayment(
   url: string,
   paymentHeader: string,
@@ -104,12 +146,16 @@ export async function requestWithPayment(
   });
 }
 
+/**
+ * Complete flow: request → get 402 → sign via AVNU → pay → get resource.
+ */
 export async function payAndRequest(
   url: string,
   account: Account,
-  options?: RequestInit,
+  paymentOptions: Pick<PaymentOptions, 'network' | 'paymasterUrl' | 'paymasterApiKey'>,
+  fetchOptions?: RequestInit,
 ): Promise<Response> {
-  const initialResponse = await fetch(url, options);
+  const initialResponse = await fetch(url, fetchOptions);
   if (initialResponse.status !== 402) return initialResponse;
 
   // Read requirements from PAYMENT-REQUIRED header
@@ -120,7 +166,6 @@ export async function payAndRequest(
     const decoded = JSON.parse(Buffer.from(prHeader, 'base64').toString('utf8'));
     requirements = decoded.accepts[0];
   } else {
-    // Fallback: read from body
     const body = await initialResponse.json() as { accepts: PaymentRequirements[] };
     requirements = body.accepts[0];
   }
@@ -132,8 +177,10 @@ export async function payAndRequest(
     to: requirements.payTo,
     token: requirements.asset,
     amount: requirements.amount,
-    network: requirements.network as 'starknet-sepolia' | 'starknet-mainnet',
+    network: paymentOptions.network,
+    paymasterUrl: paymentOptions.paymasterUrl,
+    paymasterApiKey: paymentOptions.paymasterApiKey,
   });
 
-  return requestWithPayment(url, payment.paymentHeader, options);
+  return requestWithPayment(url, payment.paymentHeader, fetchOptions);
 }

@@ -57,9 +57,9 @@ export function paymentMiddleware(
     if (!paymentHeader) {
       const response402: PaymentRequiredResponse = {
         x402Version: X402_VERSION,
-        accepts: [paymentRequirements],
+        error: 'PAYMENT-SIGNATURE header is required',
         resource: { url: request.url, description: routeConfig.config?.description, mimeType: routeConfig.config?.mimeType },
-        facilitatorUrl: facilitatorConfig.url,
+        accepts: [paymentRequirements],
       };
       const res = NextResponse.json(response402, { status: 402 });
       res.headers.set(PAYMENT_REQUIRED_HEADER, Buffer.from(JSON.stringify(response402)).toString('base64'));

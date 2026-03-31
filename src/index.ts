@@ -1,8 +1,7 @@
 /**
- * x402 v2 for Starknet
+ * x402 v2 for Starknet (SNIP-9 Outside Execution)
  */
 
-// Types & constants
 export {
   type ResourceInfo,
   type PaymentRequiredResponse,
@@ -42,9 +41,7 @@ export {
   parseU256,
 } from './types/x402';
 
-export { buildPaymentTypedData, getChainId } from './types/typed-data';
-
-// Facilitator internals (used by API routes)
+export { buildTransferCall, ANY_CALLER } from './types/typed-data';
 export { StarknetVerifier } from './facilitator/starknet-verifier';
 export { StarknetSettler } from './facilitator/starknet-settler';
-export { isNonceFresh, markNonceUsed, reserveNonce } from './facilitator/nonce-tracker';
+export { isNewPayload, markProcessed } from './facilitator/nonce-tracker';

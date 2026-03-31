@@ -17,7 +17,8 @@ export async function verifyPayment(
   paymentRequirements: PaymentRequirements,
   facilitatorUrl?: string,
 ): Promise<VerifyResponse> {
-  const baseUrl = facilitatorUrl || process.env.FACILITATOR_URL || 'http://localhost:3000';
+  const baseUrl = facilitatorUrl || process.env.FACILITATOR_URL;
+  if (!baseUrl) throw new Error('facilitatorUrl is required');
 
   const payload = decodePaymentHeader(paymentHeader);
   if (!validatePaymentPayload(payload)) {
@@ -47,7 +48,8 @@ export async function settlePayment(
   paymentRequirements: PaymentRequirements,
   facilitatorUrl?: string,
 ): Promise<SettleResponse> {
-  const baseUrl = facilitatorUrl || process.env.FACILITATOR_URL || 'http://localhost:3000';
+  const baseUrl = facilitatorUrl || process.env.FACILITATOR_URL;
+  if (!baseUrl) throw new Error('facilitatorUrl is required');
 
   try {
     const response = await fetch(`${baseUrl}/api/facilitator/settle`, {

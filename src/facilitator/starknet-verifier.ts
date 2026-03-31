@@ -1,8 +1,8 @@
 /**
- * Starknet Payment Verifier
+ * Starknet Payment Verifier (SNIP-9 Outside Execution)
  *
- * Verifies payment signatures and on-chain conditions (balance, allowance)
- * without executing transactions.
+ * Verifies that the signed OutsideExecution contains the correct
+ * transfer call matching the payment requirements.
  */
 
 import {
@@ -14,23 +14,18 @@ import {
   isValidStarknetAddress,
   parseU256,
 } from '../types/x402';
-import { buildPaymentTypedData } from '../types/typed-data';
-import { isNonceFresh } from './nonce-tracker';
-import { typedData, CallData, RpcProvider } from 'starknet';
+import { CallData, RpcProvider, hash, num } from 'starknet';
 
 export class StarknetVerifier {
   private provider: RpcProvider;
-  private facilitatorAddress: string;
 
   constructor(config: FacilitatorConfig) {
     this.provider = new RpcProvider({ nodeUrl: config.rpcUrl });
-    this.facilitatorAddress = config.facilitatorAddress;
   }
 
   async verifyExactPayment(
     payload: StarknetExactPayload,
     requirements: PaymentRequirements,
-    network: string,
   ): Promise<VerifyResponse> {
     try {
       // 1. Validate addresses
@@ -44,13 +39,15 @@ export class StarknetVerifier {
         return { isValid: false, invalidReason: 'invalid_payload: bad token address', payer: payload.from };
       }
 
-      // 2. Verify recipient matches
-      if (payload.to.toLowerCase() !== requirements.payTo.toLowerCase()) {
+      // 2. Verify recipient matches (normalize to handle leading zero differences)
+      const norm = (addr: string) => num.toHex(addr).toLowerCase();
+
+      if (norm(payload.to) !== norm(requirements.payTo)) {
         return { isValid: false, invalidReason: 'invalid_recipient_mismatch', payer: payload.from };
       }
 
       // 3. Verify token matches
-      if (payload.token.toLowerCase() !== requirements.asset.toLowerCase()) {
+      if (norm(payload.token) !== norm(requirements.asset)) {
         return { isValid: false, invalidReason: 'invalid_token_mismatch', payer: payload.from };
       }
 
@@ -60,111 +57,103 @@ export class StarknetVerifier {
       if (paymentAmount < requiredAmount) {
         return { isValid: false, invalidReason: `invalid_amount: sent ${paymentAmount}, need ${requiredAmount}`, payer: payload.from };
       }
-      if (paymentAmount <= 0n) {
-        return { isValid: false, invalidReason: 'invalid_amount: must be > 0', payer: payload.from };
+
+      // 5. Verify OutsideExecution is present
+      if (!payload.outsideExecution?.typedData || !payload.outsideExecution?.signature?.length) {
+        return { isValid: false, invalidReason: 'invalid_payload: missing outsideExecution', payer: payload.from };
       }
 
-      // 5. Verify deadline
-      const now = Math.floor(Date.now() / 1000);
-      if (payload.deadline <= now) {
-        return { isValid: false, invalidReason: 'invalid_deadline: expired', payer: payload.from };
-      }
-      if (payload.deadline - now > requirements.maxTimeoutSeconds) {
-        return { isValid: false, invalidReason: 'invalid_deadline: exceeds maxTimeoutSeconds', payer: payload.from };
+      // 6. Verify the OutsideExecution typed data contains the correct transfer call
+      const td = payload.outsideExecution.typedData;
+      const calls = td?.message?.Calls;
+      if (!calls || calls.length === 0) {
+        return { isValid: false, invalidReason: 'invalid_payload: no calls in OutsideExecution', payer: payload.from };
       }
 
-      // 6. Verify nonce is fresh (replay protection)
-      if (!isNonceFresh(payload.nonce)) {
-        return { isValid: false, invalidReason: 'invalid_transaction_state: nonce already used', payer: payload.from };
+      // The first call should be token.transfer(recipient, amount)
+      const call = calls[0];
+      const transferSelector = num.toHex(hash.getSelectorFromName('transfer'));
+
+      const normalize = (addr: string) => num.toHex(addr).toLowerCase();
+
+      if (normalize(call.To) !== normalize(payload.token)) {
+        return { isValid: false, invalidReason: 'invalid_payload: call target does not match token', payer: payload.from };
+      }
+      if (normalize(call.Selector) !== normalize(transferSelector)) {
+        return { isValid: false, invalidReason: 'invalid_payload: call is not a transfer', payer: payload.from };
       }
 
-      // 7. Verify signature
-      if (!payload.signature?.r || !payload.signature?.s) {
-        return { isValid: false, invalidReason: 'invalid_signature: missing', payer: payload.from };
-      }
-      const sigValid = await this.verifySignature(payload, network);
-      if (!sigValid) {
-        return { isValid: false, invalidReason: 'invalid_signature', payer: payload.from };
+      // Verify calldata: [recipient, amount_low, amount_high]
+      const calldata = call.Calldata;
+      if (!calldata || calldata.length < 2) {
+        return { isValid: false, invalidReason: 'invalid_payload: missing transfer calldata', payer: payload.from };
       }
 
-      // 8. Check on-chain balance
-      const balance = await this.getBalance(payload.from, payload.token);
-      if (balance < paymentAmount) {
-        return { isValid: false, invalidReason: `insufficient_funds: balance ${balance}, need ${paymentAmount}`, payer: payload.from };
+      if (normalize(calldata[0]) !== normalize(payload.to)) {
+        return { isValid: false, invalidReason: 'invalid_payload: transfer recipient does not match', payer: payload.from };
       }
 
-      // 9. Check on-chain allowance to facilitator
-      if (this.facilitatorAddress) {
-        const allowance = await this.getAllowance(payload.from, payload.token, this.facilitatorAddress);
-        if (allowance < paymentAmount) {
-          return {
-            isValid: false,
-            invalidReason: `insufficient_funds: allowance ${allowance}, need ${paymentAmount}. Approve the facilitator first.`,
-            payer: payload.from,
-          };
+      const callAmountLow = BigInt(calldata[1]);
+      const callAmountHigh = calldata.length >= 3 ? BigInt(calldata[2]) : 0n;
+      const callAmount = callAmountLow + (callAmountHigh << 128n);
+      if (callAmount < requiredAmount) {
+        return { isValid: false, invalidReason: `invalid_amount: transfer amount ${callAmount} < required ${requiredAmount}`, payer: payload.from };
+      }
+
+      // 7. Verify execute_before hasn't passed (deadline)
+      const executeBefore = Number(td.message?.['Execute Before']);
+      if (executeBefore && executeBefore <= Math.floor(Date.now() / 1000)) {
+        return { isValid: false, invalidReason: 'invalid_deadline: OutsideExecution expired', payer: payload.from };
+      }
+
+      // 8. Verify signature by calling is_valid_signature on the client's account
+      //    Note: The account will also verify this during execute_from_outside_v2,
+      //    but we check early to fail fast and save gas.
+      try {
+        const { typedData } = await import('starknet');
+        const messageHash = typedData.getMessageHash(td, payload.from);
+
+        const sigResult = await this.provider.callContract({
+          contractAddress: payload.from,
+          entrypoint: 'is_valid_signature',
+          calldata: CallData.compile({
+            hash: messageHash,
+            signature: payload.outsideExecution.signature,
+          }),
+        });
+
+        const VALID = '0x56414c4944';
+        const isValid = sigResult[0] === VALID || BigInt(sigResult[0]) === BigInt(VALID);
+        if (!isValid) {
+          return { isValid: false, invalidReason: 'invalid_signature', payer: payload.from };
         }
+      } catch (sigError) {
+        console.error('[StarknetVerifier] Signature verification failed:', sigError instanceof Error ? sigError.message : sigError);
+        return { isValid: false, invalidReason: 'invalid_signature: on-chain verification failed', payer: payload.from };
       }
+
+      // 9. Check client has sufficient token balance
+      try {
+        const balanceResult = await this.provider.callContract({
+          contractAddress: payload.token,
+          entrypoint: 'balanceOf',
+          calldata: [payload.from],
+        });
+        const balance = parseU256(balanceResult);
+        if (balance < paymentAmount) {
+          return { isValid: false, invalidReason: `insufficient_funds: balance ${balance}, need ${paymentAmount}`, payer: payload.from };
+        }
+      } catch (balError) {
+        console.error('[StarknetVerifier] Balance check failed:', balError instanceof Error ? balError.message : balError);
+        return { isValid: false, invalidReason: 'unexpected_verify_error: balance check failed', payer: payload.from };
+      }
+
+      // No allowance check needed — SNIP-9 Outside Execution doesn't use transfer_from
 
       return { isValid: true, invalidReason: null, payer: payload.from };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unexpected_verify_error';
       return { isValid: false, invalidReason: message, payer: payload.from };
-    }
-  }
-
-  /**
-   * Verify signature by calling is_valid_signature on the account contract.
-   * This is the standard Starknet account-abstraction approach — it works
-   * with all account implementations (Argent, Braavos, OpenZeppelin, etc).
-   */
-  private async verifySignature(payload: StarknetExactPayload, network: string): Promise<boolean> {
-    try {
-      const td = buildPaymentTypedData(payload, network);
-      const messageHash = typedData.getMessageHash(td, payload.from);
-
-      const result = await this.provider.callContract({
-        contractAddress: payload.from,
-        entrypoint: 'is_valid_signature',
-        calldata: CallData.compile({
-          hash: messageHash,
-          signature: [payload.signature.r, payload.signature.s],
-        }),
-      });
-
-      // Account contract returns felt252 'VALID' (0x56414c4944) on success
-      const VALID = '0x56414c4944';
-      return result[0] === VALID || BigInt(result[0]) === BigInt(VALID);
-    } catch (error) {
-      console.error('[StarknetVerifier] Signature verification failed:', error instanceof Error ? error.message : error);
-      return false;
-    }
-  }
-
-  private async getBalance(owner: string, token: string): Promise<bigint> {
-    try {
-      const result = await this.provider.callContract({
-        contractAddress: token,
-        entrypoint: 'balanceOf',
-        calldata: CallData.compile({ account: owner }),
-      });
-      return parseU256(result);
-    } catch (error) {
-      console.error('[StarknetVerifier] Balance check failed:', error instanceof Error ? error.message : error);
-      return 0n;
-    }
-  }
-
-  private async getAllowance(owner: string, token: string, spender: string): Promise<bigint> {
-    try {
-      const result = await this.provider.callContract({
-        contractAddress: token,
-        entrypoint: 'allowance',
-        calldata: CallData.compile({ owner, spender }),
-      });
-      return parseU256(result);
-    } catch (error) {
-      console.error('[StarknetVerifier] Allowance check failed:', error instanceof Error ? error.message : error);
-      return 0n;
     }
   }
 }

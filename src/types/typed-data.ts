@@ -1,64 +1,29 @@
 /**
- * SNIP-12 Typed Data definitions for x402 payments on Starknet.
+ * Transfer call construction for x402 payments.
  *
- * This is the canonical definition used by BOTH the client (signing)
- * and the facilitator (verification). Keeping them in one place
- * ensures hash consistency.
+ * Builds the ERC-20 transfer Call that gets wrapped in an
+ * OutsideExecution by the AVNU paymaster.
  */
-
-import type { StarknetExactPayload } from './x402';
-
-const CHAIN_IDS: Record<string, string> = {
-  'starknet-mainnet': '0x534e5f4d41494e',     // SN_MAIN
-  'starknet-sepolia': '0x534e5f5345504f4c4941', // SN_SEPOLIA
-};
-
-export function getChainId(network: string): string {
-  const id = CHAIN_IDS[network];
-  if (!id) throw new Error(`Unknown network: ${network}`);
-  return id;
-}
 
 /**
- * Build the SNIP-12 typed data message for an x402 payment.
- * The resulting object is passed to both `account.signMessage()`
- * and `typedData.getMessageHash()`.
+ * Build an ERC-20 transfer Call for use in OutsideExecution.
+ * This is the actual on-chain call the client's account will execute.
  */
-export function buildPaymentTypedData(
-  payload: Pick<StarknetExactPayload, 'from' | 'to' | 'token' | 'amount' | 'nonce' | 'deadline'>,
-  network: string,
-) {
-  const chainId = getChainId(network);
-
+export function buildTransferCall(
+  token: string,
+  recipient: string,
+  amount: string,
+): { contractAddress: string; entrypoint: string; calldata: string[] } {
   return {
-    types: {
-      StarkNetDomain: [
-        { name: 'name', type: 'felt' },
-        { name: 'version', type: 'felt' },
-        { name: 'chainId', type: 'felt' },
-      ],
-      Payment: [
-        { name: 'from', type: 'felt' },
-        { name: 'to', type: 'felt' },
-        { name: 'token', type: 'felt' },
-        { name: 'amount', type: 'felt' },
-        { name: 'nonce', type: 'felt' },
-        { name: 'deadline', type: 'felt' },
-      ],
-    },
-    primaryType: 'Payment' as const,
-    domain: {
-      name: 'x402 Payment',
-      version: '1',
-      chainId,
-    },
-    message: {
-      from: payload.from,
-      to: payload.to,
-      token: payload.token,
-      amount: payload.amount,
-      nonce: payload.nonce,
-      deadline: payload.deadline.toString(),
-    },
+    contractAddress: token,
+    entrypoint: 'transfer',
+    calldata: [
+      recipient,  // to
+      amount,     // amount low (u256)
+      '0',        // amount high (u256)
+    ],
   };
 }
+
+/** ANY_CALLER constant for OutsideExecution — allows anyone to submit */
+export const ANY_CALLER = '0x414e595f43414c4c4552';

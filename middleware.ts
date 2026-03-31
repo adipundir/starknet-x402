@@ -11,6 +11,7 @@ export const middleware = paymentMiddleware(
     '/api/protected/weather': {
       price: '10000', // 0.01 USDC (6 decimals)
       tokenAddress: process.env.TOKEN_ADDRESS!,
+      network: 'sepolia',
     },
   },
   {

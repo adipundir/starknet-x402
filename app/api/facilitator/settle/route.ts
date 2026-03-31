@@ -1,13 +1,15 @@
 /**
- * Facilitator Settlement Endpoint (x402 v2)
+ * Facilitator Settlement Endpoint (x402 v2 / SNIP-9)
  *
- * Settles verified payments on Starknet via transfer_from.
- * Supports AVNU paymaster for gas sponsoring when configured.
- * Flow: decode → verify → reserve nonce → execute → confirm.
+ * Submits the client's pre-signed OutsideExecution to AVNU paymaster.
+ * The client's account executes token.transfer() directly.
+ * No transfer_from, no approval needed.
+ *
+ * Flow: decode → verify → submit to AVNU → wait for confirmation.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Account, RpcProvider, PaymasterRpc } from 'starknet';
+import { RpcProvider, PaymasterRpc } from 'starknet';
 import {
   type PaymentRequirements,
   type SettleResponse,
@@ -16,13 +18,15 @@ import {
   buildSettleResponse,
   NETWORKS,
 } from '../../../../src/types/x402';
-import { reserveNonce } from '../../../../src/facilitator/nonce-tracker';
 
 function failSettle(errorReason: string, network: string | null, payer?: string): NextResponse<SettleResponse> {
+  console.log(`[facilitator /settle] FAILED: ${errorReason}`);
   return NextResponse.json(buildSettleResponse({ success: false, errorReason, network, payer }));
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[facilitator /settle] Request received');
+
   try {
     const body = await request.json();
     const { x402Version, paymentHeader, paymentRequirements } = body as {
@@ -39,6 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Decode
+    console.log('[facilitator /settle] Decoding payload...');
     const payload = decodePaymentHeader(paymentHeader);
     if (!validatePaymentPayload(payload)) {
       return failSettle('Invalid payment header encoding', null);
@@ -46,6 +51,7 @@ export async function POST(request: NextRequest) {
 
     const inner = payload.payload;
     const network = payload.accepted.network;
+    console.log(`[facilitator /settle] Payer: ${inner.from.slice(0, 16)}... | Amount: ${inner.amount} | Network: ${network}`);
 
     // Network validation
     const supportedNetworks: string[] = [NETWORKS.STARKNET_SEPOLIA, NETWORKS.STARKNET_MAINNET];
@@ -53,115 +59,84 @@ export async function POST(request: NextRequest) {
       return failSettle(`Unsupported network: ${network}`, network, inner.from);
     }
 
-    // Step 1: Verify first
+    // Verify OutsideExecution data is present
+    if (!inner.outsideExecution?.typedData || !inner.outsideExecution?.signature?.length) {
+      return failSettle('Missing outsideExecution data', network, inner.from);
+    }
+
+    // Verify first
+    console.log('[facilitator /settle] Calling /verify...');
+    const verifyStart = Date.now();
     const verifyUrl = new URL('/api/facilitator/verify', request.url);
     const verifyRes = await fetch(verifyUrl.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ x402Version, paymentHeader, paymentRequirements }),
     });
-    const verification = await verifyRes.json() as { isValid: boolean; invalidReason?: string };
 
+    if (!verifyRes.ok) {
+      return failSettle(`Verification endpoint returned HTTP ${verifyRes.status}`, network, inner.from);
+    }
+
+    const verification = await verifyRes.json() as { isValid: boolean; invalidReason?: string };
+    console.log(`[facilitator /settle] Verification: ${verification.isValid ? 'VALID' : 'INVALID'} (${Date.now() - verifyStart}ms)`);
     if (!verification.isValid) {
       return failSettle(verification.invalidReason || 'Payment verification failed', network, inner.from);
     }
 
-    // Step 2: Reserve nonce (idempotency / double-spend guard)
-    if (!reserveNonce(inner.nonce)) {
-      return failSettle('invalid_transaction_state: nonce already settled', network, inner.from);
+    // Configuration
+    const paymasterUrl = process.env.PAYMASTER_URL;
+    const paymasterApiKey = process.env.PAYMASTER_API_KEY;
+    const nodeUrl = process.env.STARKNET_NODE_URL || process.env.NEXT_PUBLIC_STARKNET_NODE_URL;
+
+    if (!paymasterUrl || !paymasterApiKey) {
+      return failSettle('Facilitator not configured: PAYMASTER_URL and PAYMASTER_API_KEY required', network, inner.from);
     }
 
-    // Step 3: Configuration
-    const nodeUrl = process.env.STARKNET_NODE_URL
-      || process.env.NEXT_PUBLIC_STARKNET_NODE_URL
-      || 'https://starknet-sepolia.public.blastapi.io';
-    const privateKey = process.env.FACILITATOR_PRIVATE_KEY;
-    const accountAddress = process.env.NEXT_PUBLIC_FACILITATOR_ADDRESS;
-
-    if (!privateKey || !accountAddress) {
-      return failSettle(
-        'Facilitator not configured: ' +
-          (!privateKey ? 'FACILITATOR_PRIVATE_KEY ' : '') +
-          (!accountAddress ? 'NEXT_PUBLIC_FACILITATOR_ADDRESS' : ''),
-        network,
-        inner.from,
-      );
+    if (!nodeUrl) {
+      return failSettle('Facilitator not configured: STARKNET_NODE_URL required', network, inner.from);
     }
 
-    // Step 4: Execute transfer_from
+    // Submit to AVNU paymaster
     try {
-      const provider = new RpcProvider({ nodeUrl });
-      const facilitatorAccount = new Account(provider, accountAddress, privateKey);
+      console.log('[facilitator /settle] Submitting to AVNU paymaster...');
+      const settleStart = Date.now();
 
-      const calls = [{
-        contractAddress: inner.token,
-        entrypoint: 'transfer_from',
-        calldata: [
-          inner.from,   // sender
-          inner.to,     // recipient
-          inner.amount, // amount low
-          '0',          // amount high (u256)
-        ],
-      }];
+      const paymaster = new PaymasterRpc({
+        nodeUrl: paymasterUrl,
+        headers: { 'x-paymaster-api-key': paymasterApiKey },
+      });
 
-      let transaction_hash: string;
+      const result = await paymaster.executeTransaction(
+        {
+          type: 'invoke' as const,
+          invoke: {
+            userAddress: inner.from,
+            typedData: inner.outsideExecution.typedData,
+            signature: inner.outsideExecution.signature,
+          },
+        },
+        {
+          version: '0x1',
+          feeMode: { mode: 'sponsored' as const },
+        },
+      );
 
-      const paymasterUrl = process.env.PAYMASTER_URL;
-      const paymasterApiKey = process.env.PAYMASTER_API_KEY;
-
-      if (paymasterUrl && paymasterApiKey) {
-        // Try AVNU paymaster for gas-sponsored settlement, fall back to standard
-        try {
-          const paymaster = new PaymasterRpc({
-            nodeUrl: paymasterUrl,
-            headers: { 'x-paymaster-api-key': paymasterApiKey },
-          });
-
-          const buildResult = await paymaster.buildTransaction(
-            { type: 'invoke' as const, invoke: { userAddress: accountAddress, calls } },
-            { version: '0x1', feeMode: { mode: 'sponsored' as const } },
-          );
-
-          if (buildResult.type !== 'invoke' || !('typed_data' in buildResult)) {
-            throw new Error('Unexpected paymaster build result type');
-          }
-          const pmTypedData = (buildResult as any).typed_data;
-          const sig = await facilitatorAccount.signMessage(pmTypedData);
-          const sigR = '0x' + ((sig as any).r ?? (sig as any)[0]).toString(16);
-          const sigS = '0x' + ((sig as any).s ?? (sig as any)[1]).toString(16);
-
-          const execResult = await paymaster.executeTransaction(
-            { type: 'invoke' as const, invoke: { userAddress: accountAddress, typedData: pmTypedData, signature: [sigR, sigS] } },
-            { version: '0x1', feeMode: { mode: 'sponsored' as const } },
-          );
-
-          transaction_hash = (execResult as any).transaction_hash;
-          console.log(`[Facilitator /settle] Paymaster-sponsored settlement | Tx: ${transaction_hash.slice(0, 16)}...`);
-        } catch (pmError) {
-          console.warn('[Facilitator /settle] Paymaster failed, falling back to standard:', pmError instanceof Error ? pmError.message.slice(0, 120) : pmError);
-          // Fall through to standard execution below
-          const feeEstimate = await facilitatorAccount.estimateInvokeFee(calls[0]);
-          const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
-          const maxFee = (suggestedMaxFee * 150n) / 100n;
-          const result = await facilitatorAccount.execute(calls[0], { maxFee });
-          transaction_hash = result.transaction_hash;
-          console.log(`[Facilitator /settle] Standard settlement (fallback) | Tx: ${transaction_hash.slice(0, 16)}...`);
-        }
-      } else {
-        // Standard execution — facilitator pays gas
-        const feeEstimate = await facilitatorAccount.estimateInvokeFee(calls[0]);
-        const suggestedMaxFee = BigInt(feeEstimate.suggestedMaxFee.toString());
-        const maxFee = (suggestedMaxFee * 150n) / 100n;
-
-        const result = await facilitatorAccount.execute(calls[0], { maxFee });
-        transaction_hash = result.transaction_hash;
-        console.log(`[Facilitator /settle] Standard settlement | Tx: ${transaction_hash.slice(0, 16)}...`);
+      const transaction_hash = (result as any).transaction_hash;
+      if (!transaction_hash) {
+        return failSettle('Paymaster did not return transaction_hash', network, inner.from);
       }
 
+      console.log(`[facilitator /settle] AVNU submitted tx: ${transaction_hash.slice(0, 20)}... (${Date.now() - settleStart}ms)`);
+      console.log('[facilitator /settle] Waiting for on-chain confirmation...');
+
       // Wait for on-chain confirmation
+      const provider = new RpcProvider({ nodeUrl });
       await provider.waitForTransaction(transaction_hash, {
         successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1'],
       });
+
+      console.log(`[facilitator /settle] CONFIRMED | Tx: ${transaction_hash} | Payer: ${inner.from.slice(0, 16)}... | Amount: ${inner.amount}`);
 
       return NextResponse.json(buildSettleResponse({
         success: true,
@@ -171,12 +146,12 @@ export async function POST(request: NextRequest) {
         amount: inner.amount,
       }));
     } catch (execError) {
-      const message = execError instanceof Error ? execError.message : 'Transaction execution failed';
-      console.error('[Facilitator /settle] Settlement failed:', message);
+      const message = execError instanceof Error ? execError.message : 'Settlement execution failed';
+      console.error('[facilitator /settle] Execution error:', message);
       return failSettle(message, network, inner.from);
     }
   } catch (error) {
-    console.error('[Facilitator /settle] Unexpected error:', error);
+    console.error('[facilitator /settle] Unexpected error:', error);
     return NextResponse.json(
       buildSettleResponse({ success: false, errorReason: 'unexpected_settle_error' }),
       { status: 500 },

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Account, RpcProvider } from 'starknet';
 
-interface DemoState {
+interface PageState {
   phase: 'idle' | 'requesting' | 'got402' | 'signing' | 'paying' | 'complete';
   paymentRequired?: any;
   weatherData?: any;
@@ -16,20 +16,20 @@ function formatUSDC(amount: string): string {
   return `$${(Number(amount) / 1e6).toFixed(2)} USDC`;
 }
 
-export default function DemoPage() {
-  const [state, setState] = useState<DemoState>({ phase: 'idle' });
+export default function HomePage() {
+  const [state, setState] = useState<PageState>({ phase: 'idle' });
   const [envReady, setEnvReady] = useState(false);
 
   useEffect(() => {
-    const ready = !!(
+    setEnvReady(!!(
       process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY &&
       process.env.NEXT_PUBLIC_CLIENT_ADDRESS &&
-      process.env.NEXT_PUBLIC_STARKNET_NODE_URL
-    );
-    setEnvReady(ready);
+      process.env.NEXT_PUBLIC_STARKNET_NODE_URL &&
+      process.env.NEXT_PUBLIC_PAYMASTER_URL
+    ));
   }, []);
 
-  const runDemo = async () => {
+  const handlePayment = async () => {
     setState({ phase: 'requesting' });
 
     try {
@@ -43,10 +43,8 @@ export default function DemoPage() {
         return;
       }
 
-      // Read from PAYMENT-REQUIRED header (v2) or body
       const prHeader = res402.headers.get('payment-required');
       let paymentRequired: any;
-
       if (prHeader) {
         paymentRequired = JSON.parse(atob(prHeader));
       } else {
@@ -55,19 +53,17 @@ export default function DemoPage() {
 
       setState({ phase: 'got402', paymentRequired, timing: { step1: step1Time, step2: 0 } });
 
-      // Step 2: Sign payment using our SDK functions
+      // Step 2: Sign payment via AVNU paymaster (SNIP-9 OutsideExecution)
       setState(prev => ({ ...prev, phase: 'signing' }));
 
       const requirements = paymentRequired.accepts[0];
-      const nodeUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL!;
-      const provider = new RpcProvider({ nodeUrl });
+      const provider = new RpcProvider({ nodeUrl: process.env.NEXT_PUBLIC_STARKNET_NODE_URL! });
       const account = new Account(
         provider,
         process.env.NEXT_PUBLIC_CLIENT_ADDRESS!,
         process.env.NEXT_PUBLIC_CLIENT_PRIVATE_KEY!,
       );
 
-      // Import and use our SDK's signPayment function
       const { signPayment } = await import('../lib/x402/client-payment');
       const { paymentHeader } = await signPayment(account, {
         from: account.address,
@@ -75,6 +71,8 @@ export default function DemoPage() {
         token: requirements.asset,
         amount: requirements.amount,
         network: requirements.network,
+        paymasterUrl: process.env.NEXT_PUBLIC_PAYMASTER_URL,
+        paymasterApiKey: process.env.NEXT_PUBLIC_PAYMASTER_API_KEY,
       });
 
       // Step 3: Retry with PAYMENT-SIGNATURE header
@@ -96,9 +94,8 @@ export default function DemoPage() {
         return;
       }
 
-      // Read settlement from PAYMENT-RESPONSE header
       const prResHeader = paidRes.headers.get('payment-response');
-      let settlement: DemoState['settlement'];
+      let settlement: PageState['settlement'];
       if (prResHeader) {
         settlement = JSON.parse(atob(prResHeader));
       }
@@ -126,14 +123,14 @@ export default function DemoPage() {
         {!envReady && (
           <div className="mb-8 p-6 bg-red-50 border-2 border-red-400 rounded-xl">
             <h3 className="text-xl font-bold text-red-900 mb-2">Environment variables not loaded</h3>
-            <p className="text-red-800">Check .env and restart the dev server.</p>
+            <p className="text-red-800">Check .env (needs NEXT_PUBLIC_PAYMASTER_URL) and restart the dev server.</p>
           </div>
         )}
 
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold mb-4 text-gray-900 tracking-tight">x402 Payment Protocol</h1>
           <p className="text-xl text-gray-600 font-light">
-            HTTP-native payments for API access on Starknet (v2)
+            Trustless HTTP-native payments on Starknet (SNIP-9)
           </p>
         </div>
 
@@ -144,7 +141,7 @@ export default function DemoPage() {
 
             {state.phase === 'idle' && !state.error && (
               <div className="flex items-center justify-center h-64">
-                <p className="text-gray-400 text-center">Click "Request Weather API" to start the demo.</p>
+                <p className="text-gray-400 text-center">Click "Request Weather API" to start.</p>
               </div>
             )}
 
@@ -157,24 +154,16 @@ export default function DemoPage() {
             {state.phase === 'got402' && state.paymentRequired && (
               <div className="space-y-4">
                 <div className="text-2xl font-bold text-orange-600">402 Payment Required</div>
-                <div className="text-sm text-gray-600">
-                  Time: {state.timing?.step1}ms
-                </div>
+                <div className="text-sm text-gray-600">Time: {state.timing?.step1}ms</div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
                   <div><strong>Amount:</strong> {formatUSDC(state.paymentRequired.accepts[0].amount)}</div>
                   <div><strong>Token:</strong> <span className="font-mono text-sm">{state.paymentRequired.accepts[0].asset.slice(0, 12)}...</span></div>
                   <div><strong>Recipient:</strong> <span className="font-mono text-sm">{state.paymentRequired.accepts[0].payTo.slice(0, 12)}...</span></div>
                   <div><strong>Network:</strong> {state.paymentRequired.accepts[0].network}</div>
-                  {state.paymentRequired.accepts[0].extra?.sponsored && (
-                    <div className="text-green-700 font-semibold">Gas Sponsored</div>
-                  )}
                 </div>
-                <div>
-                  <div className="text-sm text-gray-600 mb-2">PAYMENT-REQUIRED header:</div>
-                  <pre className="text-xs text-gray-200 bg-black p-4 rounded overflow-x-auto max-h-48">
-                    {JSON.stringify(state.paymentRequired, null, 2)}
-                  </pre>
-                </div>
+                <pre className="text-xs text-gray-200 bg-black p-4 rounded overflow-x-auto max-h-48">
+                  {JSON.stringify(state.paymentRequired, null, 2)}
+                </pre>
               </div>
             )}
 
@@ -183,8 +172,9 @@ export default function DemoPage() {
                 <div className="text-center">
                   <div className="w-8 h-8 border-3 border-gray-300 border-t-black rounded-full animate-spin mx-auto mb-3"></div>
                   <p className="text-gray-600 font-medium">
-                    {state.phase === 'signing' ? 'Signing payment...' : 'Verifying & settling on-chain...'}
+                    {state.phase === 'signing' ? 'Signing via AVNU paymaster...' : 'Settling on-chain (SNIP-9)...'}
                   </p>
+                  <p className="text-xs text-gray-400 mt-2">No approval needed. Gas sponsored by AVNU.</p>
                 </div>
               </div>
             )}
@@ -192,13 +182,11 @@ export default function DemoPage() {
             {state.phase === 'complete' && state.weatherData && (
               <div className="space-y-4">
                 <div className="text-2xl font-bold text-green-600">200 OK</div>
-                <div className="text-sm text-gray-600">
-                  Payment: {state.timing?.step2}ms
-                </div>
+                <div className="text-sm text-gray-600">Settlement: {state.timing?.step2}ms</div>
 
                 {state.settlement && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-1">
-                    <div className="text-sm font-semibold text-green-800">Settlement</div>
+                    <div className="text-sm font-semibold text-green-800">Settlement Confirmed</div>
                     <div className="text-xs font-mono text-green-700">
                       tx: {state.settlement.transaction?.slice(0, 20)}...
                     </div>
@@ -213,12 +201,9 @@ export default function DemoPage() {
                   </div>
                 )}
 
-                <div>
-                  <div className="text-sm text-gray-600 mb-2">Weather Data:</div>
-                  <pre className="text-xs text-gray-200 bg-black p-4 rounded overflow-x-auto max-h-64">
-                    {JSON.stringify(state.weatherData, null, 2)}
-                  </pre>
-                </div>
+                <pre className="text-xs text-gray-200 bg-black p-4 rounded overflow-x-auto max-h-64">
+                  {JSON.stringify(state.weatherData, null, 2)}
+                </pre>
               </div>
             )}
 
@@ -236,51 +221,44 @@ export default function DemoPage() {
           {/* Right: Controls */}
           <div className="space-y-6">
             <div className="bg-white border border-gray-300 rounded-xl p-8 shadow-sm">
-              {state.phase === 'idle' && (
+              {(state.phase === 'idle' || state.phase === 'got402') && (
                 <>
                   <div className="mb-6">
                     <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-md mb-3">
-                      x402 v2
+                      SNIP-9 / x402 v2
                     </div>
-                    <h2 className="text-2xl font-semibold text-gray-900">Request Protected Resource</h2>
+                    <h2 className="text-2xl font-semibold text-gray-900">
+                      {state.phase === 'got402' ? 'Sign & Pay' : 'Request Protected Resource'}
+                    </h2>
                   </div>
                   <p className="text-gray-600 mb-8 leading-relaxed">
-                    Send a request to the weather API. The middleware returns <strong>402</strong> with
-                    payment requirements in the <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-REQUIRED</code> header.
-                    The client signs a payment using <code className="bg-gray-100 px-1 rounded text-xs">signPayment()</code> from the SDK
-                    and retries with the <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-SIGNATURE</code> header.
+                    {state.phase === 'got402'
+                      ? 'Got 402. Click to sign an OutsideExecution via AVNU and retry. No token approval needed.'
+                      : <>
+                          Uses <code className="bg-gray-100 px-1 rounded text-xs">signPayment()</code> from our SDK.
+                          The client signs an OutsideExecution (SNIP-9) via AVNU paymaster.
+                          No <code className="bg-gray-100 px-1 rounded text-xs">approve()</code> needed. Gas is sponsored.
+                        </>
+                    }
                   </p>
+
+                  {state.phase === 'got402' && state.paymentRequired && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                      <div className="text-lg font-semibold text-gray-900">
+                        {formatUSDC(state.paymentRequired.accepts[0].amount)}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {state.paymentRequired.accepts[0].scheme} on {state.paymentRequired.accepts[0].network}
+                      </div>
+                    </div>
+                  )}
+
                   <button
-                    onClick={runDemo}
+                    onClick={handlePayment}
                     disabled={!envReady}
                     className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-300 text-white font-medium rounded-lg transition-all"
                   >
-                    Request Weather API
-                  </button>
-                </>
-              )}
-
-              {state.phase === 'got402' && (
-                <>
-                  <div className="mb-4">
-                    <h2 className="text-2xl font-bold text-gray-900">Sign & Pay</h2>
-                  </div>
-                  <p className="text-gray-600 mb-6">
-                    Got 402. Click to sign the payment and retry.
-                  </p>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
-                    <div className="text-lg font-semibold text-gray-900">
-                      {formatUSDC(state.paymentRequired.accepts[0].amount)}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {state.paymentRequired.accepts[0].scheme} scheme on {state.paymentRequired.accepts[0].network}
-                    </div>
-                  </div>
-                  <button
-                    onClick={runDemo}
-                    className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-lg transition-all"
-                  >
-                    Sign Payment & Retry
+                    {state.phase === 'got402' ? 'Sign & Pay (SNIP-9)' : 'Request Weather API'}
                   </button>
                 </>
               )}
@@ -295,13 +273,12 @@ export default function DemoPage() {
               )}
             </div>
 
-            {/* How it works */}
             <div className="bg-white border border-gray-300 rounded-xl p-8 shadow-sm">
-              <h3 className="text-xl font-semibold mb-6 text-gray-900">x402 v2 Flow</h3>
+              <h3 className="text-xl font-semibold mb-6 text-gray-900">How it works</h3>
               <ol className="space-y-3 text-gray-700 text-sm leading-relaxed">
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">1.</span>
-                  <span>Client sends <code className="bg-gray-100 px-1 rounded text-xs">GET /api/protected/weather</code></span>
+                  <span>Client requests <code className="bg-gray-100 px-1 rounded text-xs">GET /api/protected/weather</code></span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">2.</span>
@@ -309,21 +286,35 @@ export default function DemoPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">3.</span>
-                  <span>Client signs payment off-chain using <code className="bg-gray-100 px-1 rounded text-xs">signPayment()</code></span>
+                  <span>Client builds <code className="bg-gray-100 px-1 rounded text-xs">token.transfer()</code> call via AVNU paymaster</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">4.</span>
-                  <span>Client retries with <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-SIGNATURE</code> header</span>
+                  <span>Client signs the OutsideExecution (SNIP-9) — <strong>no approval needed</strong></span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">5.</span>
-                  <span>Middleware calls facilitator to verify signature + settle on-chain</span>
+                  <span>Client retries with <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-SIGNATURE</code> header</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-semibold shrink-0">6.</span>
-                  <span>Client receives <strong>200</strong> + data + <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-RESPONSE</code> header with tx hash</span>
+                  <span>Facilitator verifies call contents, then submits to AVNU</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold shrink-0">7.</span>
+                  <span>AVNU executes <code className="bg-gray-100 px-1 rounded text-xs">execute_from_outside_v2</code> on client's account — <strong>AVNU pays gas</strong></span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold shrink-0">8.</span>
+                  <span>Client receives <strong>200</strong> + data + <code className="bg-gray-100 px-1 rounded text-xs">PAYMENT-RESPONSE</code> header</span>
                 </li>
               </ol>
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  Trustless: the signed OutsideExecution specifies the exact transfer call.
+                  The facilitator cannot change the amount or recipient.
+                </p>
+              </div>
             </div>
           </div>
         </div>

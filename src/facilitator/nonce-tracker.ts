@@ -1,46 +1,33 @@
 /**
- * In-memory nonce tracker for replay protection.
+ * Nonce tracking for SNIP-9 Outside Execution.
  *
- * Tracks used nonces to prevent double-spending. In production,
- * replace with Redis or on-chain nonce queries for persistence
- * across restarts and horizontal scaling.
+ * With SNIP-9, nonce uniqueness is enforced on-chain by the account contract.
+ * The paymaster generates nonces during buildTransaction().
+ * This module is retained for optional server-side duplicate request detection.
  */
 
-const usedNonces = new Set<string>();
-
-/** Maximum nonces to track before evicting oldest entries. */
-const MAX_NONCES = 100_000;
+const processedPayloads = new Set<string>();
+const MAX_SIZE = 100_000;
 
 /**
- * Check whether a nonce has already been used.
- * Returns true if the nonce is fresh (not yet used).
+ * Check if a payment payload hash has already been processed.
+ * Returns true if this is a new (unprocessed) payload.
  */
-export function isNonceFresh(nonce: string): boolean {
-  return !usedNonces.has(nonce);
+export function isNewPayload(payloadHash: string): boolean {
+  return !processedPayloads.has(payloadHash);
 }
 
 /**
- * Mark a nonce as used. Call this after successful settlement.
+ * Mark a payload hash as processed.
  */
-export function markNonceUsed(nonce: string): void {
-  if (usedNonces.size >= MAX_NONCES) {
-    // Evict oldest entries (Sets iterate in insertion order)
-    const iterator = usedNonces.values();
-    for (let i = 0; i < MAX_NONCES / 10; i++) {
+export function markProcessed(payloadHash: string): void {
+  if (processedPayloads.size >= MAX_SIZE) {
+    const iterator = processedPayloads.values();
+    for (let i = 0; i < MAX_SIZE / 10; i++) {
       const entry = iterator.next();
       if (entry.done) break;
-      usedNonces.delete(entry.value);
+      processedPayloads.delete(entry.value);
     }
   }
-  usedNonces.add(nonce);
-}
-
-/**
- * Check if nonce is fresh, and if so atomically mark it as used.
- * Returns true if the nonce was fresh and is now reserved.
- */
-export function reserveNonce(nonce: string): boolean {
-  if (usedNonces.has(nonce)) return false;
-  markNonceUsed(nonce);
-  return true;
+  processedPayloads.add(payloadHash);
 }

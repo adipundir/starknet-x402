@@ -1,46 +1,25 @@
-# x402 Protocol Specification for Starknet (v2)
+# x402 v2 Exact Scheme on Starknet (SNIP-9)
 
-This directory contains the x402 payment protocol specification for the Starknet implementation.
+## Payment Flow
 
-## Documentation
+1. Client requests protected resource → gets 402 with `PAYMENT-REQUIRED` header
+2. Client builds `token.transfer(recipient, amount)` call
+3. AVNU paymaster wraps it in an OutsideExecution (SNIP-9)
+4. Client signs the OutsideExecution typed data (SNIP-12)
+5. Client retries with `PAYMENT-SIGNATURE` header
+6. Facilitator verifies: correct call, valid signature, sufficient balance
+7. Facilitator submits to AVNU → `execute_from_outside_v2` on client's account
+8. AVNU pays gas. Client's account executes `transfer`. No approval needed.
+9. Client receives 200 + data + `PAYMENT-RESPONSE` header
 
-### `scheme_exact_starknet.md` - Complete Specification
+## Trust Model
 
-The single source of truth for implementing x402 payments on Starknet.
+The signed OutsideExecution contains the exact `transfer` call. The facilitator cannot change the amount, recipient, or token. Nonce uniqueness is enforced on-chain by the account contract.
 
-## v2 Changes from v1
+## Headers
 
-| Area | v1 | v2 |
-|------|----|----|
-| Payment header | `X-PAYMENT` | `PAYMENT-SIGNATURE` |
-| Response header | `X-Payment-Response` | `PAYMENT-RESPONSE` |
-| 402 header | (none) | `PAYMENT-REQUIRED` |
-| Amount field | `maxAmountRequired` | `amount` |
-| Settle response | `txHash`, `error`, `networkId` | `transaction`, `errorReason`, `network` |
-| Verify response | (no payer) | `payer` field added |
-| Payment payload | (minimal) | `resource`, `accepted`, `extensions` fields |
-| 402 body | (minimal) | `resource: ResourceInfo`, `extensions` added |
-| Protocol version | `x402Version: 1` | `x402Version: 2` |
-
-All v1 fields are kept as deprecated aliases for backward compatibility.
-
-## Key Features
-
-- **Starknet-Native**: Uses account abstraction and `is_valid_signature` for verification
-- **USDC Default**: Circle native USDC (6 decimals) as default token
-- **Gas Sponsoring**: AVNU paymaster integration for gasless settlement
-- **Facilitator-Settled**: Facilitator handles `transfer_from` on-chain
-- **Replay Protected**: In-memory nonce tracking
-- **Trust-Minimized**: Users control approval amounts
-
-## Quick Reference
-
-**Client**: Read "PAYMENT-SIGNATURE header payload", "SNIP-12 Typed Data", "Client Implementation"
-
-**Facilitator**: Read "Verification (12 steps)", "Settlement", "Facilitator API"
-
-**Server**: Read "402 Response Format", "Middleware Implementation"
-
-## Version
-
-**Version 2.0** - March 2026
+| Header | Direction | Content |
+|--------|-----------|---------|
+| `PAYMENT-REQUIRED` | Server → Client | Base64 `PaymentRequiredResponse` |
+| `PAYMENT-SIGNATURE` | Client → Server | Base64 `PaymentPayload` with OutsideExecution |
+| `PAYMENT-RESPONSE` | Server → Client | Base64 settlement result |

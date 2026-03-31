@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "x402 Payment Demo - Starknet",
-  description: "Interactive demo of x402 payment protocol on Starknet. No fee, 2 second settlement, $0.001 minimum payment.",
-  keywords: ["x402", "starknet", "payments", "micropayments", "blockchain", "web3", "demo"],
+  title: "x402 for Starknet",
+  description: "Trustless HTTP-native payments on Starknet via SNIP-9 Outside Execution.",
+  keywords: ["x402", "starknet", "payments", "snip-9"],
 };
 
 export default function RootLayout({

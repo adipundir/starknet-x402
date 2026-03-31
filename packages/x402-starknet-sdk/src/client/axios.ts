@@ -19,7 +19,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { Account } from 'starknet';
-import type { PaymentRequirements, PaymentRequiredResponse, SupportedResponse } from '../types/types';
+import type { PaymentRequirements, PaymentRequiredResponse } from '../types/types';
 import {
   PAYMENT_SIGNATURE_HEADER,
   PAYMENT_REQUIRED_HEADER,
@@ -29,7 +29,7 @@ import { signPayment } from './client-payment';
 
 export interface X402ClientConfig {
   network: 'starknet-sepolia' | 'starknet-mainnet';
-  onPaymentRequired?: (requirements: PaymentRequirements, sponsored: boolean) => boolean | Promise<boolean>;
+  onPaymentRequired?: (requirements: PaymentRequirements) => boolean | Promise<boolean>;
   onPaymentSettled?: (transaction: string, network: string) => void;
 }
 
@@ -40,23 +40,6 @@ export interface X402AxiosInstance extends AxiosInstance {
     payer?: string;
     amount?: string;
   };
-}
-
-const sponsorshipCache = new Map<string, boolean>();
-
-async function isSponsored(facilitatorUrl: string): Promise<boolean> {
-  if (sponsorshipCache.has(facilitatorUrl)) return sponsorshipCache.get(facilitatorUrl)!;
-  try {
-    const res = await fetch(`${facilitatorUrl}/supported`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json() as SupportedResponse;
-      const sponsored = data.kinds?.some(k => (k.extra as any)?.sponsored === true) ?? false;
-      sponsorshipCache.set(facilitatorUrl, sponsored);
-      return sponsored;
-    }
-  } catch { /* unreachable */ }
-  sponsorshipCache.set(facilitatorUrl, false);
-  return false;
 }
 
 export function createX402Client(
@@ -75,14 +58,11 @@ export function createX402Client(
       return response;
     }
 
-    const parsed = extractPaymentRequired(response);
-    if (!parsed) return Promise.reject(new X402PaymentError('No payment requirements in 402 response', response));
-
-    const { requirements, facilitatorUrl } = parsed;
-    const sponsored = facilitatorUrl ? await isSponsored(facilitatorUrl) : false;
+    const requirements = extractPaymentRequired(response);
+    if (!requirements) return Promise.reject(new X402PaymentError('No payment requirements in 402 response', response));
 
     if (config.onPaymentRequired) {
-      const approved = await config.onPaymentRequired(requirements, sponsored);
+      const approved = await config.onPaymentRequired(requirements);
       if (!approved) return Promise.reject(new X402PaymentError('Payment rejected by callback', response));
     }
 
@@ -122,19 +102,16 @@ function readSettlement(client: X402AxiosInstance, response: AxiosResponse, conf
   }
 }
 
-function extractPaymentRequired(response: AxiosResponse): { requirements: PaymentRequirements; facilitatorUrl?: string } | null {
-  const prHeader = response.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
-  if (prHeader) {
+function extractPaymentRequired(response: AxiosResponse): PaymentRequirements | null {
+  const header = response.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
+  if (header) {
     try {
-      const decoded: PaymentRequiredResponse = JSON.parse(Buffer.from(prHeader, 'base64').toString('utf8'));
-      const req = decoded.accepts?.[0];
-      if (req) return { requirements: req, facilitatorUrl: decoded.facilitatorUrl };
-    } catch { /* fall through */ }
+      const decoded: PaymentRequiredResponse = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+      if (decoded.accepts?.[0]) return decoded.accepts[0];
+    } catch { /* fall through to body */ }
   }
   const body = response.data as PaymentRequiredResponse | undefined;
-  const req = body?.accepts?.[0];
-  if (req) return { requirements: req, facilitatorUrl: body?.facilitatorUrl };
-  return null;
+  return body?.accepts?.[0] ?? null;
 }
 
 export class X402PaymentError extends Error {

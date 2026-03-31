@@ -59,8 +59,7 @@ export interface PaymentRequirements {
 export interface PaymentRequiredResponse {
   x402Version: number;
   accepts: PaymentRequirements[];
-  resource?: ResourceInfo;
-  facilitatorUrl?: string;
+  resource: ResourceInfo;
   error?: string;
   extensions?: Record<string, unknown>;
 }

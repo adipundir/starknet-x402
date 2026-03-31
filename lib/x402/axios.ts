@@ -1,15 +1,11 @@
 /**
- * x402 Axios Wrapper
+ * x402 Axios Wrapper (SNIP-9 Outside Execution)
  *
  * Drop-in axios replacement that handles x402 payments automatically.
- * On 402: reads PAYMENT-REQUIRED → signs payment → retries with PAYMENT-SIGNATURE.
+ * On 402: reads PAYMENT-REQUIRED → builds OutsideExecution via AVNU →
+ * client signs → retries with PAYMENT-SIGNATURE.
  *
- * The client can discover facilitator capabilities (sponsorship, etc.)
- * via the facilitatorUrl returned in the 402 response.
- *
- * Usage:
- *   const client = createX402Client(account, { network: 'starknet-sepolia' });
- *   const { data } = await client.get('/api/protected/weather');
+ * No ERC-20 approval needed.
  */
 
 import axios, {
@@ -19,7 +15,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { Account } from 'starknet';
-import type { PaymentRequirements, PaymentRequiredResponse, SupportedResponse } from './types';
+import type { PaymentRequirements, PaymentRequiredResponse } from './types';
 import {
   PAYMENT_SIGNATURE_HEADER,
   PAYMENT_REQUIRED_HEADER,
@@ -29,9 +25,9 @@ import { signPayment } from './client-payment';
 
 export interface X402ClientConfig {
   network: 'starknet-sepolia' | 'starknet-mainnet';
-  /** Called before signing — return false to reject payment */
-  onPaymentRequired?: (requirements: PaymentRequirements, sponsored: boolean) => boolean | Promise<boolean>;
-  /** Called after successful settlement */
+  paymasterUrl?: string;
+  paymasterApiKey?: string;
+  onPaymentRequired?: (requirements: PaymentRequirements) => boolean | Promise<boolean>;
   onPaymentSettled?: (transaction: string, network: string) => void;
 }
 
@@ -42,26 +38,6 @@ export interface X402AxiosInstance extends AxiosInstance {
     payer?: string;
     amount?: string;
   };
-}
-
-// Cache facilitator sponsorship info by URL
-const sponsorshipCache = new Map<string, boolean>();
-
-async function isSponsored(facilitatorUrl: string): Promise<boolean> {
-  if (sponsorshipCache.has(facilitatorUrl)) return sponsorshipCache.get(facilitatorUrl)!;
-
-  try {
-    const res = await fetch(`${facilitatorUrl}/supported`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json() as SupportedResponse;
-      const sponsored = data.kinds?.some(k => (k.extra as any)?.sponsored === true) ?? false;
-      sponsorshipCache.set(facilitatorUrl, sponsored);
-      return sponsored;
-    }
-  } catch { /* unreachable */ }
-
-  sponsorshipCache.set(facilitatorUrl, false);
-  return false;
 }
 
 export function createX402Client(
@@ -80,35 +56,25 @@ export function createX402Client(
       return response;
     }
 
-    // Extract requirements from 402
-    const parsed = extractPaymentRequired(response);
-    if (!parsed) {
-      return Promise.reject(new X402PaymentError('No payment requirements in 402 response', response));
-    }
+    const requirements = extractPaymentRequired(response);
+    if (!requirements) return Promise.reject(new X402PaymentError('No payment requirements in 402 response', response));
 
-    const { requirements, facilitatorUrl } = parsed;
-
-    // Check sponsorship from facilitator if URL is available
-    const sponsored = facilitatorUrl ? await isSponsored(facilitatorUrl) : false;
-
-    // Ask caller before paying
     if (config.onPaymentRequired) {
-      const approved = await config.onPaymentRequired(requirements, sponsored);
-      if (!approved) {
-        return Promise.reject(new X402PaymentError('Payment rejected by callback', response));
-      }
+      const approved = await config.onPaymentRequired(requirements);
+      if (!approved) return Promise.reject(new X402PaymentError('Payment rejected by callback', response));
     }
 
-    // Sign payment
+    // Sign payment via AVNU paymaster (SNIP-9 OutsideExecution)
     const { paymentHeader } = await signPayment(account, {
       from: account.address,
       to: requirements.payTo,
       token: requirements.asset,
       amount: requirements.amount,
       network: config.network,
+      paymasterUrl: config.paymasterUrl,
+      paymasterApiKey: config.paymasterApiKey,
     });
 
-    // Retry with PAYMENT-SIGNATURE
     const retryConfig: InternalAxiosRequestConfig = {
       ...response.config,
       headers: response.config.headers,
@@ -137,23 +103,18 @@ function readSettlement(client: X402AxiosInstance, response: AxiosResponse, conf
   }
 }
 
-function extractPaymentRequired(response: AxiosResponse): { requirements: PaymentRequirements; facilitatorUrl?: string } | null {
-  // Try PAYMENT-REQUIRED header
-  const prHeader = response.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
-  if (prHeader) {
+function extractPaymentRequired(response: AxiosResponse): PaymentRequirements | null {
+  // Try PAYMENT-REQUIRED header first
+  const header = response.headers[PAYMENT_REQUIRED_HEADER.toLowerCase()];
+  if (header) {
     try {
-      const decoded: PaymentRequiredResponse = JSON.parse(Buffer.from(prHeader, 'base64').toString('utf8'));
-      const req = decoded.accepts?.[0];
-      if (req) return { requirements: req, facilitatorUrl: decoded.facilitatorUrl };
-    } catch { /* fall through */ }
+      const decoded: PaymentRequiredResponse = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+      if (decoded.accepts?.[0]) return decoded.accepts[0];
+    } catch { /* fall through to body */ }
   }
-
-  // Fallback: body
+  // Fallback: read from response body
   const body = response.data as PaymentRequiredResponse | undefined;
-  const req = body?.accepts?.[0];
-  if (req) return { requirements: req, facilitatorUrl: body?.facilitatorUrl };
-
-  return null;
+  return body?.accepts?.[0] ?? null;
 }
 
 export class X402PaymentError extends Error {
