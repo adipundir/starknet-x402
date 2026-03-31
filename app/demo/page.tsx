@@ -15,7 +15,7 @@ interface State {
 
 export default function DemoPage() {
   const [state, setState] = useState<State>({ phase: 'idle' });
-  const [envReady, setEnvReady] = useState(false);
+  const [envReady, setEnvReady] = useState(true);
 
   useEffect(() => {
     setEnvReady(!!(
