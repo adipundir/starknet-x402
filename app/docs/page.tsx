@@ -127,6 +127,7 @@ export default function DocsPage() {
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href="/" className="font-bold text-lg hover:text-zinc-300 transition">starknet x402</Link>
           <div className="flex gap-1">
+            <Link href="/docs" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Docs</Link>
             <Link href="/demo" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Demo</Link>
             <a href="https://github.com/adipundir/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">GitHub</a>
             <a href="https://www.npmjs.com/package/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">npm</a>

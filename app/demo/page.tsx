@@ -99,10 +99,15 @@ export default function DemoPage() {
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white font-sans">
-      <nav className="border-b border-white/5">
+      <nav className="border-b border-white/5 sticky top-0 bg-[#09090b]/90 backdrop-blur-sm z-50">
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="font-bold text-lg">starknet x402</Link>
-          <span className="text-xs text-zinc-600">live on starknet sepolia</span>
+          <Link href="/" className="font-bold text-lg hover:text-zinc-300 transition">starknet x402</Link>
+          <div className="flex gap-1">
+            <Link href="/docs" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Docs</Link>
+            <Link href="/demo" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Demo</Link>
+            <a href="https://github.com/adipundir/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">GitHub</a>
+            <a href="https://www.npmjs.com/package/starknet-x402" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">npm</a>
+          </div>
         </div>
       </nav>
 

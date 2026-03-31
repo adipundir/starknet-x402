@@ -6,9 +6,9 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white font-sans">
       {/* Nav */}
-      <nav className="border-b border-white/5">
+      <nav className="border-b border-white/5 sticky top-0 bg-[#09090b]/90 backdrop-blur-sm z-50">
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span className="font-bold text-lg">starknet x402</span>
+          <Link href="/" className="font-bold text-lg hover:text-zinc-300 transition">starknet x402</Link>
           <div className="flex gap-1">
             <Link href="/docs" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Docs</Link>
             <Link href="/demo" className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-md transition">Demo</Link>
