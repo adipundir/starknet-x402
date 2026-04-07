@@ -60,8 +60,8 @@ export function paymentMiddleware(
 
     const paymentHeader = getPaymentHeader(request.headers);
 
-    // No payment → return 402
     if (!paymentHeader) {
+      console.log(`[x402 middleware] 402 → ${pathname} (no payment header)`);
       const response402: PaymentRequiredResponse = {
         x402Version: X402_VERSION,
         error: 'PAYMENT-SIGNATURE header is required',
@@ -78,20 +78,22 @@ export function paymentMiddleware(
       return res;
     }
 
-    // Payment present → validate, verify, settle
     try {
+      console.log(`[x402 middleware] Payment received for ${pathname}, verifying...`);
       const paymentPayload = decodePaymentHeader(paymentHeader);
       if (!validatePaymentPayload(paymentPayload)) {
+        console.log('[x402 middleware] REJECTED: invalid payment payload');
         return NextResponse.json({ error: 'Invalid payment payload' }, { status: 400 });
       }
 
       if (paymentPayload.accepted.scheme !== STARKNET_SCHEME) {
+        console.log(`[x402 middleware] REJECTED: unsupported scheme "${paymentPayload.accepted.scheme}"`);
         return NextResponse.json({ error: 'Unsupported payment scheme' }, { status: 400 });
       }
 
       const facilitatorUrl = facilitatorConfig.url;
 
-      // Verify
+      const verifyStart = Date.now();
       const verifyRes = await fetch(`${facilitatorUrl}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,6 +101,7 @@ export function paymentMiddleware(
       });
 
       if (!verifyRes.ok) {
+        console.log(`[x402 middleware] REJECTED: facilitator /verify returned HTTP ${verifyRes.status}`);
         return NextResponse.json(
           { error: 'Facilitator verification unavailable', message: `HTTP ${verifyRes.status}` },
           { status: 502 },
@@ -106,6 +109,8 @@ export function paymentMiddleware(
       }
 
       const verification = await verifyRes.json() as VerifyResponse;
+      console.log(`[x402 middleware] /verify ${verification.isValid ? 'PASSED' : 'FAILED'} (${Date.now() - verifyStart}ms) payer=${verification.payer ?? 'unknown'}${verification.invalidReason ? ` reason=${verification.invalidReason}` : ''}`);
+
       if (!verification.isValid) {
         return NextResponse.json(
           { error: 'Payment verification failed', message: verification.invalidReason },
@@ -113,7 +118,7 @@ export function paymentMiddleware(
         );
       }
 
-      // Settle
+      const settleStart = Date.now();
       const settleRes = await fetch(`${facilitatorUrl}/settle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -121,6 +126,7 @@ export function paymentMiddleware(
       });
 
       if (!settleRes.ok) {
+        console.log(`[x402 middleware] REJECTED: facilitator /settle returned HTTP ${settleRes.status}`);
         return NextResponse.json(
           { error: 'Facilitator settlement unavailable', message: `HTTP ${settleRes.status}` },
           { status: 502 },
@@ -128,6 +134,8 @@ export function paymentMiddleware(
       }
 
       const settlement = await settleRes.json() as SettleResponse;
+      console.log(`[x402 middleware] /settle ${settlement.success ? 'SUCCESS' : 'FAILED'} (${Date.now() - settleStart}ms) tx=${settlement.transaction ?? 'none'} payer=${settlement.payer ?? 'unknown'} amount=${settlement.amount ?? 'unknown'}${settlement.errorReason ? ` reason=${settlement.errorReason}` : ''}`);
+
       if (!settlement.success) {
         return NextResponse.json(
           { error: 'Payment settlement failed', message: settlement.errorReason },
@@ -135,7 +143,6 @@ export function paymentMiddleware(
         );
       }
 
-      // Payment settled → pass through
       const response = NextResponse.next();
       response.headers.set(
         PAYMENT_RESPONSE_HEADER,

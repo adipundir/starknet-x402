@@ -17,7 +17,6 @@ import {
 } from '../../../../src/types/x402';
 
 const SUPPORTED_NETWORKS: Set<string> = new Set([NETWORKS.STARKNET_SEPOLIA, NETWORKS.STARKNET_MAINNET]);
-const SETTLE_TIMEOUT_MS = 120_000; // 2 minutes
 
 function fail(errorReason: string, network: string | null, payer?: string): NextResponse<SettleResponse> {
   return NextResponse.json(buildSettleResponse({ success: false, errorReason, network, payer }));
@@ -68,8 +67,9 @@ export async function POST(request: NextRequest) {
       return fail('STARKNET_NODE_URL required', network, inner.from);
     }
 
-    // Submit to AVNU paymaster
     try {
+      console.log(`[facilitator /settle] Submitting to AVNU paymaster for payer=${inner.from} amount=${inner.amount} network=${network}`);
+      const submitStart = Date.now();
       const paymaster = new PaymasterRpc({
         nodeUrl: paymasterUrl,
         headers: { 'x-paymaster-api-key': paymasterApiKey },
@@ -91,36 +91,19 @@ export async function POST(request: NextRequest) {
       );
 
       const { transaction_hash } = result as { transaction_hash: string };
+      console.log(`[facilitator /settle] Paymaster responded in ${Date.now() - submitStart}ms, tx_hash=${transaction_hash ?? 'none'}`);
+
       if (!transaction_hash) {
         return fail('Paymaster did not return transaction_hash', network, inner.from);
       }
 
-      // Wait for confirmation with timeout
+      console.log(`[facilitator /settle] Waiting for on-chain confirmation...`);
+      const confirmStart = Date.now();
       const provider = new RpcProvider({ nodeUrl });
-      const confirmPromise = provider.waitForTransaction(transaction_hash, {
+      await provider.waitForTransaction(transaction_hash, {
         successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1'],
       });
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Settlement confirmation timed out')), SETTLE_TIMEOUT_MS),
-      );
-
-      try {
-        await Promise.race([confirmPromise, timeoutPromise]);
-      } catch (timeoutError) {
-        // Timeout doesn't mean the tx failed — it may still land on-chain.
-        // Return the tx hash so clients can check status independently.
-        const reason = timeoutError instanceof Error ? timeoutError.message : 'Settlement confirmation timed out';
-        console.error('[facilitator /settle]', reason);
-        return NextResponse.json(buildSettleResponse({
-          success: false,
-          transaction: transaction_hash,
-          network,
-          errorReason: reason,
-          payer: inner.from,
-          amount: inner.amount,
-        }));
-      }
+      console.log(`[facilitator /settle] CONFIRMED on-chain in ${Date.now() - confirmStart}ms, tx=${transaction_hash}`);
 
       return NextResponse.json(buildSettleResponse({
         success: true,

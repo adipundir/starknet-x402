@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
     }
 
     const provider = new RpcProvider({ nodeUrl });
+    const verifyStart = Date.now();
     const result = await verifyPayment(paymentHeader, paymentRequirements, provider);
+    console.log(`[facilitator /verify] ${result.isValid ? 'VALID' : 'INVALID'} (${Date.now() - verifyStart}ms) payer=${result.payer ?? 'unknown'}${result.invalidReason ? ` reason=${result.invalidReason}` : ''}`);
     return NextResponse.json(result);
   } catch (error) {
     console.error('[facilitator /verify]', error instanceof Error ? error.message : error);

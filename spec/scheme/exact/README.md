@@ -200,7 +200,7 @@ Settlement is performed by submitting the OutsideExecution via the AVNU paymaste
    - `feeMode`: `{ mode: 'sponsored' }`
 4. The paymaster calls `execute_from_outside_v2` on the payer's account contract, which executes the embedded `transfer` call. Gas is sponsored.
 5. Facilitator extracts the `transaction_hash` from the paymaster response.
-6. Facilitator waits for on-chain confirmation using `provider.waitForTransaction()`, expecting status `ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`. A timeout of 120 seconds is enforced.
+6. Facilitator waits for on-chain confirmation using `provider.waitForTransaction()`, expecting status `ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`. No artificial timeout is imposed — the platform timeout (e.g. Vercel function timeout) is the only backstop, ensuring every response is definitive (confirmed or reverted).
 7. Facilitator returns the settlement result (success/failure, transaction hash, network, payer) to the resource server.
 
 ## `PAYMENT-RESPONSE` Header Payload
