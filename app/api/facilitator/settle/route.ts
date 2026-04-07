@@ -2,7 +2,7 @@
  * Facilitator Settlement Endpoint (x402 v2 / SNIP-9)
  *
  * Assumes the middleware has already called /verify.
- * Flow: decode → check duplicate → submit to AVNU → confirm.
+ * Flow: decode → submit to AVNU → confirm.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         },
       );
 
-      const transaction_hash = (result as any).transaction_hash;
+      const { transaction_hash } = result as { transaction_hash: string };
       if (!transaction_hash) {
         return fail('Paymaster did not return transaction_hash', network, inner.from);
       }
@@ -105,7 +105,22 @@ export async function POST(request: NextRequest) {
         setTimeout(() => reject(new Error('Settlement confirmation timed out')), SETTLE_TIMEOUT_MS),
       );
 
-      await Promise.race([confirmPromise, timeoutPromise]);
+      try {
+        await Promise.race([confirmPromise, timeoutPromise]);
+      } catch (timeoutError) {
+        // Timeout doesn't mean the tx failed — it may still land on-chain.
+        // Return the tx hash so clients can check status independently.
+        const reason = timeoutError instanceof Error ? timeoutError.message : 'Settlement confirmation timed out';
+        console.error('[facilitator /settle]', reason);
+        return NextResponse.json(buildSettleResponse({
+          success: false,
+          transaction: transaction_hash,
+          network,
+          errorReason: reason,
+          payer: inner.from,
+          amount: inner.amount,
+        }));
+      }
 
       return NextResponse.json(buildSettleResponse({
         success: true,

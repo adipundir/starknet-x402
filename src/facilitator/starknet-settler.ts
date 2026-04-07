@@ -69,7 +69,7 @@ export class StarknetSettler {
         },
       );
 
-      const transaction_hash = (result as any).transaction_hash;
+      const { transaction_hash } = result as { transaction_hash: string };
       if (!transaction_hash) {
         return buildSettleResponse({
           success: false,

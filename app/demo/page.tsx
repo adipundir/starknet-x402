@@ -3,12 +3,27 @@
 import { useState, useEffect } from 'react';
 import { Account, RpcProvider } from 'starknet';
 import Link from 'next/link';
+import type { PaymentRequiredResponse, SettlementResponseHeader } from '../../lib/x402/types';
+
+interface WeatherLocation {
+  city: string;
+  state: string;
+  country: string;
+  coordinates: { lat: number; lon: number };
+}
+
+interface WeatherData {
+  location: WeatherLocation;
+  current: Record<string, unknown>;
+  forecast?: Record<string, unknown>[];
+  timestamp: string;
+}
 
 interface State {
   phase: 'idle' | 'requesting' | 'got402' | 'signing' | 'paying' | 'complete';
-  paymentRequired?: any;
-  weatherData?: any;
-  settlement?: { transaction: string; network: string };
+  paymentRequired?: PaymentRequiredResponse;
+  weatherData?: WeatherData;
+  settlement?: SettlementResponseHeader;
   error?: string;
   timing?: { step1: number; step2: number };
 }
@@ -39,10 +54,17 @@ export default function DemoPage() {
         return;
       }
 
+      const { signPayment, decodeSettlementResponse } = await import('../../lib/x402/client-payment');
+
       const prHeader = res402.headers.get('payment-required');
-      const paymentRequired = prHeader
+      const paymentRequired: PaymentRequiredResponse = prHeader
         ? JSON.parse(atob(prHeader))
         : await res402.json();
+
+      if (!paymentRequired.accepts?.length) {
+        setState({ phase: 'idle', error: 'Server returned 402 but no payment requirements' });
+        return;
+      }
 
       setState({ phase: 'got402', paymentRequired, timing: { step1: step1Time, step2: 0 } });
       setState(prev => ({ ...prev, phase: 'signing' }));
@@ -55,13 +77,12 @@ export default function DemoPage() {
       );
 
       const requirements = paymentRequired.accepts[0];
-      const { signPayment } = await import('../../lib/x402/client-payment');
       const { paymentHeader } = await signPayment(account, {
         from: account.address,
         to: requirements.payTo,
         token: requirements.asset,
         amount: requirements.amount,
-        network: requirements.network,
+        network: requirements.network as 'starknet-sepolia' | 'starknet-mainnet',
         paymasterUrl: process.env.NEXT_PUBLIC_PAYMASTER_URL,
         paymasterApiKey: process.env.NEXT_PUBLIC_PAYMASTER_API_KEY,
       });
@@ -75,14 +96,17 @@ export default function DemoPage() {
       const step2Time = Math.round(performance.now() - t2);
 
       if (paidRes.status !== 200) {
-        const err: any = await paidRes.json();
+        const err = await paidRes.json() as { message?: string; error?: string };
         setState({ phase: 'idle', error: `${paidRes.status}: ${err.message || err.error}`, paymentRequired });
         return;
       }
 
+      const responseBody = await paidRes.json() as { data: WeatherData };
       const prResHeader = paidRes.headers.get('payment-response');
-      const settlement = prResHeader ? JSON.parse(atob(prResHeader)) : undefined;
-      const weatherData = await paidRes.json();
+      const settlement: SettlementResponseHeader | undefined = prResHeader
+        ? decodeSettlementResponse(prResHeader) ?? undefined
+        : undefined;
+      const weatherData = responseBody.data;
 
       setState({ phase: 'complete', paymentRequired, weatherData, settlement, timing: { step1: step1Time, step2: step2Time } });
     } catch (error) {

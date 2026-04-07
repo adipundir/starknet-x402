@@ -1,6 +1,14 @@
 /**
  * x402 v2 Protocol Types for Starknet SDK
+ *
+ * IMPORTANT: Shared protocol types (interfaces, constants, helpers) must stay
+ * in sync with the canonical source at src/types/x402.ts.
+ * SDK-specific types (e.g. FacilitatorConfig) are defined at the bottom.
  */
+
+// =============================================================================
+// Constants
+// =============================================================================
 
 export const X402_VERSION = 2;
 
@@ -25,25 +33,14 @@ export const TOKENS = {
   ETH: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
 } as const;
 
+// =============================================================================
+// Core Protocol Types
+// =============================================================================
+
 export interface ResourceInfo {
   url: string;
   description?: string;
   mimeType?: string;
-}
-
-export interface RouteConfig {
-  price: string;
-  tokenAddress: string;
-  network?: 'sepolia' | 'mainnet' | string;
-  config?: {
-    description?: string;
-    mimeType?: string;
-    maxTimeoutSeconds?: number;
-  };
-}
-
-export interface FacilitatorConfig {
-  url: string;
 }
 
 export interface PaymentRequirements {
@@ -83,6 +80,10 @@ export interface PaymentPayload {
   extensions?: Record<string, unknown>;
 }
 
+// =============================================================================
+// Facilitator API Types
+// =============================================================================
+
 export interface VerifyRequest {
   x402Version: number;
   paymentHeader: string;
@@ -101,6 +102,13 @@ export interface SettleRequest {
   paymentRequirements: PaymentRequirements;
 }
 
+export interface SettlementResponseHeader {
+  transaction: string;
+  network: string;
+  payer?: string;
+  amount?: string;
+}
+
 export interface SettleResponse {
   success: boolean;
   transaction: string | null;
@@ -108,6 +116,90 @@ export interface SettleResponse {
   errorReason: string | null;
   payer?: string;
   amount?: string;
+  extensions?: Record<string, unknown>;
+}
+
+export interface SupportedKind {
+  x402Version: number;
+  scheme: string;
+  network: string;
+  extra?: Record<string, unknown>;
+}
+
+export interface SupportedResponse {
+  kinds: SupportedKind[];
+}
+
+// =============================================================================
+// Configuration Types
+// =============================================================================
+
+export interface RouteConfig {
+  price: string;
+  tokenAddress: string;
+  network?: 'sepolia' | 'mainnet' | string;
+  config?: {
+    description?: string;
+    mimeType?: string;
+    maxTimeoutSeconds?: number;
+  };
+}
+
+/**
+ * SDK-specific facilitator config — just a URL for clients connecting to a facilitator.
+ * (Distinct from the server-side FacilitatorConfig which includes rpcUrl, paymasterUrl, etc.)
+ */
+export interface FacilitatorConfig {
+  url: string;
+}
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+export class X402Error extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'X402Error';
+  }
+}
+
+export class VerificationError extends X402Error {
+  constructor(message: string, details?: unknown) {
+    super(message, 'VERIFICATION_ERROR', details);
+    this.name = 'VerificationError';
+  }
+}
+
+export class SettlementError extends X402Error {
+  constructor(message: string, details?: unknown) {
+    super(message, 'SETTLEMENT_ERROR', details);
+    this.name = 'SettlementError';
+  }
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+export function getRequiredAmount(req: PaymentRequirements): bigint {
+  return BigInt(req.amount);
+}
+
+export function isValidStarknetAddress(address: string): boolean {
+  if (!address || typeof address !== 'string') return false;
+  const clean = address.startsWith('0x') ? address.slice(2) : address;
+  if (!/^[0-9a-fA-F]+$/.test(clean)) return false;
+  return clean.length > 0 && clean.length <= 64;
+}
+
+export function parseU256(result: string[]): bigint {
+  if (!result || result.length < 2) return 0n;
+  return BigInt(result[0]) + (BigInt(result[1]) << 128n);
 }
 
 export function getPaymentHeader(headers: { get(name: string): string | null }): string | null {
@@ -122,7 +214,7 @@ export function decodePaymentHeader(header: string): PaymentPayload | null {
 export function validatePaymentPayload(payload: PaymentPayload | null): payload is PaymentPayload {
   if (!payload) return false;
   return !!(
-    payload.x402Version &&
+    payload.x402Version === X402_VERSION &&
     payload.accepted?.scheme &&
     payload.accepted?.network &&
     payload.payload?.from &&
@@ -134,8 +226,14 @@ export function validatePaymentPayload(payload: PaymentPayload | null): payload 
   );
 }
 
-export function encodeSettlementResponseHeader(transaction: string, network: string, payer?: string): string {
-  return Buffer.from(JSON.stringify({ transaction, network, payer })).toString('base64');
+export function encodeSettlementResponseHeader(
+  transaction: string,
+  network: string,
+  payer?: string,
+  amount?: string,
+): string {
+  const header = { transaction, network, payer, amount };
+  return Buffer.from(JSON.stringify(header)).toString('base64');
 }
 
 export function buildSettleResponse(opts: {

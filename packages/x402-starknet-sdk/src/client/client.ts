@@ -10,6 +10,6 @@ export type SettlementResult = SettleResponse;
 
 export { decodePaymentHeader, validatePaymentPayload };
 
-export function createSettlementResponseHeader(transaction: string, network: string): string {
-  return encodeSettlementResponseHeader(transaction, network);
+export function createSettlementResponseHeader(transaction: string, network: string, payer?: string, amount?: string): string {
+  return encodeSettlementResponseHeader(transaction, network, payer, amount);
 }

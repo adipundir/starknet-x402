@@ -1,7 +1,8 @@
 /**
  * x402 v2 Payment Middleware for Starknet
  *
- * Sponsorship is discovered from the facilitator's /supported endpoint.
+ * Payment info flows through headers:
+ *   PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -98,9 +99,10 @@ export function paymentMiddleware(
       }
 
       const response = NextResponse.next();
-      response.headers.set(PAYMENT_RESPONSE_HEADER, encodeSettlementResponseHeader(settlement.transaction || '', settlement.network || network, settlement.payer));
+      response.headers.set(PAYMENT_RESPONSE_HEADER, encodeSettlementResponseHeader(settlement.transaction || '', settlement.network || network, settlement.payer, settlement.amount));
       return response;
     } catch (error) {
+      console.error('[x402 middleware]', error instanceof Error ? error.message : String(error));
       return NextResponse.json({ error: 'Payment processing failed', message: error instanceof Error ? error.message : String(error) }, { status: 500 });
     }
   };

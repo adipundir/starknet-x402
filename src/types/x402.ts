@@ -250,7 +250,7 @@ export function decodePaymentHeader(header: string): PaymentPayload | null {
 export function validatePaymentPayload(payload: PaymentPayload | null): payload is PaymentPayload {
   if (!payload) return false;
   return !!(
-    payload.x402Version &&
+    payload.x402Version === X402_VERSION &&
     payload.accepted?.scheme &&
     payload.accepted?.network &&
     payload.payload?.from &&

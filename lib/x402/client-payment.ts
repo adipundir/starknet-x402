@@ -6,8 +6,8 @@
  * No ERC-20 approval is needed.
  */
 
-import { Account, RpcProvider, PaymasterRpc, num } from 'starknet';
-import type { PaymentPayload, PaymentRequirements } from './types';
+import { Account, RpcProvider, PaymasterRpc, num, type Signature, type TypedData } from 'starknet';
+import type { PaymentPayload, PaymentRequirements, SettlementResponseHeader } from './types';
 import { X402_VERSION, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER } from './types';
 import { buildTransferCall } from '../../src/types/typed-data';
 
@@ -76,12 +76,18 @@ export async function signPayment(
     throw new Error('Paymaster did not return typed_data');
   }
 
-  const typedData = (buildResult as any).typed_data;
+  const { typed_data: typedData } = buildResult as { typed_data: TypedData };
 
   // 3. Client signs the OutsideExecution typed data
-  const signature = await account.signMessage(typedData);
-  const sigR = num.toHex((signature as any).r ?? (signature as any)[0]);
-  const sigS = num.toHex((signature as any).s ?? (signature as any)[1]);
+  const signature: Signature = await account.signMessage(typedData);
+  let sigR: string, sigS: string;
+  if (Array.isArray(signature)) {
+    sigR = num.toHex(signature[0]);
+    sigS = num.toHex(signature[1]);
+  } else {
+    sigR = num.toHex(signature.r);
+    sigS = num.toHex(signature.s);
+  }
 
   // 4. Package into PaymentPayload
   const paymentPayload: PaymentPayload = {
@@ -124,9 +130,13 @@ export async function signPaymentWithPrivateKey(
 /**
  * Decode a PAYMENT-RESPONSE header.
  */
-export function decodeSettlementResponse(header: string) {
-  try { return JSON.parse(Buffer.from(header, 'base64').toString('utf8')); }
-  catch { return null; }
+export function decodeSettlementResponse(header: string): SettlementResponseHeader | null {
+  try {
+    return JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+  } catch (e) {
+    console.warn('Failed to decode settlement response header:', e);
+    return null;
+  }
 }
 
 /**
